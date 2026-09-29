@@ -1,0 +1,26 @@
+{
+  "name": "win-bash",
+  "version": "1.1.2",
+  "description": "Windows-specific Niubash Bash integration for Codex, including portable install and default config bootstrap.",
+  "author": {
+    "name": "Local user"
+  },
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": [
+    "./hooks/session-start-resolve-win-bash.json",
+    "./hooks/pre-tool-use-inject-win-bash.json"
+  ],
+  "interface": {
+    "displayName": "Win Bash",
+    "shortDescription": "Run Windows shell commands through Niubash Bash",
+    "longDescription": "Detects or installs Niubash Bash, activates winuxcmd, writes a default ~/.niubashrc when absent, and injects the resolved shell into Codex exec_command calls.",
+    "developerName": "Local user",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Hooks",
+      "Shell",
+      "Context Injection"
+    ]
+  }
+}
