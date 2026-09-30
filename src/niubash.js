@@ -41,9 +41,7 @@ export function resolveBashPath() {
     'F:\\studio\\apps\\Niubash\\niu.exe',
     localAppData ? path.join(localAppData, 'Niubash', 'winuxcmd', 'bin', 'bash.exe') : null,
     localAppData ? path.join(localAppData, 'Niubash', 'niu.exe') : null,
-    'C:\\Program Files\\Git\\bin\\bash.exe',
-    'C:\\Program Files\\Git\\usr\\bin\\bash.exe',
-    ...whereBash(),
+    ...whereBash().filter((value) => /niubash/i.test(value)),
   ].filter(Boolean);
   return candidates.find(isFile) || null;
 }
