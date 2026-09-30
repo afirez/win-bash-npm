@@ -1,58 +1,38 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { migrateConfig, markPlatform, getPlatformMarker, unmarkPlatform } from '../src/config.js';
+import {
+  SHARED_BASH_PATH,
+  LEGACY_BASH_PATH,
+  INTERMEDIATE_BASH_PATH,
+  INSTALLED_AT_LEGACY,
+  INSTALLED_AT_INTERMEDIATE,
+  withTempHome,
+} from './helpers.js';
 
-function withTempHome(fn) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'win-bash-config-'));
-  const prev = {
-    USERPROFILE: process.env.USERPROFILE,
-    HOME: process.env.HOME,
-    CODEX_HOME: process.env.CODEX_HOME,
-    CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
-    OPENCODE_CONFIG_DIR: process.env.OPENCODE_CONFIG_DIR,
-  };
-  process.env.USERPROFILE = dir;
-  process.env.HOME = dir;
-  delete process.env.CODEX_HOME;
-  delete process.env.CLAUDE_CONFIG_DIR;
-  delete process.env.OPENCODE_CONFIG_DIR;
-  try {
-    fn(dir);
-  } finally {
-    for (const [k, v] of Object.entries(prev)) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+function writeJson(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 test('migrateConfig merges legacy per-host configs into single ~/.config/win-bash/win-bash.json', () => {
   withTempHome((home) => {
-    // legacy codex config under ~/.codex
-    fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
-    fs.writeFileSync(path.join(home, '.codex', 'win-bash.json'), JSON.stringify({ shell: 'C:\\legacy\\bash.exe' }));
-
-    // legacy claude + opencode per-host configs
-    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(home, '.claude', 'win-bash.json'), JSON.stringify({ bashPath: 'C:\\legacy\\bash.exe', installedAt: '2026-01-01' }));
-    fs.mkdirSync(path.join(home, '.config', 'opencode'), { recursive: true });
-    fs.writeFileSync(path.join(home, '.config', 'opencode', 'win-bash.json'), JSON.stringify({ bashPath: 'C:\\legacy\\bash.exe', installedAt: '2026-01-02' }));
+    writeJson(path.join(home, '.codex', 'win-bash.json'), { shell: LEGACY_BASH_PATH });
+    writeJson(path.join(home, '.claude', 'win-bash.json'), { bashPath: LEGACY_BASH_PATH, installedAt: INSTALLED_AT_LEGACY });
+    writeJson(path.join(home, '.config', 'opencode', 'win-bash.json'), { bashPath: LEGACY_BASH_PATH, installedAt: INSTALLED_AT_INTERMEDIATE });
 
     const config = migrateConfig();
 
-    assert.equal(config.shell, 'C:\\legacy\\bash.exe');
+    assert.equal(config.shell, LEGACY_BASH_PATH);
     assert.equal(config.platforms.codex, true);
     assert.equal(config.platforms.claude, true);
     assert.equal(config.platforms.opencode, true);
-    assert.equal(config.installedAt, '2026-01-01');
+    assert.equal(config.installedAt, INSTALLED_AT_LEGACY);
 
-    // single shared file exists; legacy files removed
     const shared = JSON.parse(fs.readFileSync(path.join(home, '.config', 'win-bash', 'win-bash.json'), 'utf8'));
-    assert.equal(shared.shell, 'C:\\legacy\\bash.exe');
+    assert.equal(shared.shell, LEGACY_BASH_PATH);
     assert.equal(fs.existsSync(path.join(home, '.codex', 'win-bash.json')), false);
     assert.equal(fs.existsSync(path.join(home, '.claude', 'win-bash.json')), false);
     assert.equal(fs.existsSync(path.join(home, '.config', 'opencode', 'win-bash.json')), false);
@@ -61,12 +41,12 @@ test('migrateConfig merges legacy per-host configs into single ~/.config/win-bas
 
 test('markPlatform and unmarkPlatform record per-platform markers in the shared file', () => {
   withTempHome((home) => {
-    markPlatform('claude', 'C:\\shared\\bash.exe');
-    markPlatform('opencode', 'C:\\shared\\bash.exe');
+    markPlatform('claude', SHARED_BASH_PATH);
+    markPlatform('opencode', SHARED_BASH_PATH);
 
     const claudeMarker = getPlatformMarker('claude');
     assert.equal(claudeMarker.installed, true);
-    assert.equal(claudeMarker.shell, 'C:\\shared\\bash.exe');
+    assert.equal(claudeMarker.shell, SHARED_BASH_PATH);
     assert.equal(getPlatformMarker('codex'), null);
 
     unmarkPlatform('claude');
@@ -81,11 +61,8 @@ test('markPlatform and unmarkPlatform record per-platform markers in the shared 
 
 test('migrateConfig absorbs codex legacy even when shared shell already exists', () => {
   withTempHome((home) => {
-    // shared file exists with shell (e.g. claude installed first) + stale codex legacy
-    fs.mkdirSync(path.join(home, '.config', 'win-bash'), { recursive: true });
-    fs.writeFileSync(path.join(home, '.config', 'win-bash', 'win-bash.json'), JSON.stringify({ shell: 'C:\\shared\\bash.exe', platforms: { claude: true } }));
-    fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
-    fs.writeFileSync(path.join(home, '.codex', 'win-bash.json'), JSON.stringify({ shell: 'C:\\shared\\bash.exe' }));
+    writeJson(path.join(home, '.config', 'win-bash', 'win-bash.json'), { shell: SHARED_BASH_PATH, platforms: { claude: true } });
+    writeJson(path.join(home, '.codex', 'win-bash.json'), { shell: SHARED_BASH_PATH });
 
     const config = migrateConfig();
     assert.equal(config.platforms.codex, true);
@@ -96,16 +73,13 @@ test('migrateConfig absorbs codex legacy even when shared shell already exists',
 
 test('migrateConfig cleans all sources when legacy and intermediate coexist', () => {
   withTempHome((home) => {
-    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
-    fs.writeFileSync(path.join(home, '.claude', 'win-bash.json'), JSON.stringify({ bashPath: 'C:\\legacy\\bash.exe', installedAt: '2026-01-01' }));
-    fs.mkdirSync(path.join(home, '.config', 'win-bash'), { recursive: true });
-    fs.writeFileSync(path.join(home, '.config', 'win-bash', 'claude.json'), JSON.stringify({ bashPath: 'C:\\intermediate\\bash.exe', installedAt: '2026-01-02' }));
+    writeJson(path.join(home, '.claude', 'win-bash.json'), { bashPath: LEGACY_BASH_PATH, installedAt: INSTALLED_AT_LEGACY });
+    writeJson(path.join(home, '.config', 'win-bash', 'claude.json'), { bashPath: INTERMEDIATE_BASH_PATH, installedAt: INSTALLED_AT_INTERMEDIATE });
 
     const config = migrateConfig();
     assert.equal(config.platforms.claude, true);
-    assert.equal(config.shell, 'C:\\legacy\\bash.exe', 'legacy shell should win');
+    assert.equal(config.shell, LEGACY_BASH_PATH, 'legacy shell should win');
     assert.equal(fs.existsSync(path.join(home, '.claude', 'win-bash.json')), false);
     assert.equal(fs.existsSync(path.join(home, '.config', 'win-bash', 'claude.json')), false);
   });
 });
-

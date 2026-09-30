@@ -15,7 +15,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
     "pack": "npm pack --dry-run"
   },
   "engines": {
