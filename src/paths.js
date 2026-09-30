@@ -61,7 +61,7 @@ export function getClaudeSettingsPath() {
   return path.join(getClaudeHome(), 'settings.json');
 }
 
-export function getClaudeWinBashConfigPath() {
+export function getClaudeWinBashIntermediateConfigPath() {
   return path.join(getWinBashConfigDir(), 'claude.json');
 }
 
@@ -89,7 +89,7 @@ export function getOpencodeSkillRoot() {
   return path.join(getOpencodeHome(), 'skills', 'win-bash');
 }
 
-export function getOpencodeWinBashConfigPath() {
+export function getOpencodeWinBashIntermediateConfigPath() {
   return path.join(getWinBashConfigDir(), 'opencode.json');
 }
 

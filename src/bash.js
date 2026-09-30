@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { run } from './process.js';
 import { installBash, resolveBashPath } from './niubash.js';
-import { getLegacyWinBashConfigPath, getNiubashRcPath, getWinBashConfigPath, migrateConfigFile } from './paths.js';
+import { readConfig } from './config.js';
+import { getNiubashRcPath, getWinBashConfigPath } from './paths.js';
 
 export function findInstallRoot(shellPath) {
   let current = path.dirname(shellPath);
@@ -45,13 +46,14 @@ export function bashUninstall() {
     throw new Error(`Refusing to remove user-managed Bash at ${installRoot || shell}. Use the Niubash uninstaller if you installed it yourself.`);
   }
   fs.rmSync(installRoot, { recursive: true, force: true });
-  const configPath = getWinBashConfigPath();
-  migrateConfigFile(getLegacyWinBashConfigPath(), configPath);
-  try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    if (String(config.shell || '').startsWith(installRoot)) fs.rmSync(configPath, { force: true });
-  } catch {
-    // Preserve unrelated or malformed config.
+
+  const config = readConfig();
+  if (String(config.shell || '').startsWith(installRoot)) {
+    delete config.shell;
+    delete config.platforms.codex;
+    const dir = path.dirname(getWinBashConfigPath());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(getWinBashConfigPath(), `${JSON.stringify(config, null, 2)}\n`);
   }
   console.log(`Removed win-bash managed Niubash: ${installRoot}`);
   console.log(`Preserved: ${getNiubashRcPath()}`);

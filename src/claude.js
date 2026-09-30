@@ -2,13 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { commandExists, run } from './process.js';
 import { installBash } from './niubash.js';
+import { markPlatform, getPlatformMarker, unmarkPlatform } from './config.js';
 import {
   getBundledClaudeSkillRoot,
   getClaudeSettingsPath,
   getClaudeSkillRoot,
-  getClaudeWinBashConfigPath,
   getLegacyClaudeWinBashConfigPath,
-  migrateConfigFile,
 } from './paths.js';
 
 export function applyClaudeEnv(settings, bashPath) {
@@ -52,11 +51,9 @@ export function installClaude() {
   if (!commandExists('claude')) throw new Error('claude CLI not found in PATH');
 
   const bashPath = installBash();
-  migrateConfigFile(getLegacyClaudeWinBashConfigPath(), getClaudeWinBashConfigPath());
   writeSettings(applyClaudeEnv(readJson(getClaudeSettingsPath(), {}), bashPath));
   installSkill();
-  fs.mkdirSync(path.dirname(getClaudeWinBashConfigPath()), { recursive: true });
-  fs.writeFileSync(getClaudeWinBashConfigPath(), `${JSON.stringify({ bashPath, installedAt: new Date().toISOString() }, null, 2)}\n`);
+  markPlatform('claude', bashPath);
 
   console.log(`Claude Code configured for: ${bashPath}`);
   console.log(`Skill installed: ${getClaudeSkillRoot()}`);
@@ -75,14 +72,14 @@ export function doctorClaude() {
 }
 
 export function uninstallClaude() {
-  const marker = readJson(getClaudeWinBashConfigPath(), null);
+  const marker = getPlatformMarker('claude');
   const settings = readJson(getClaudeSettingsPath(), {});
   const env = { ...(settings.env || {}) };
-  if (marker && env.CLAUDE_CODE_GIT_BASH_PATH === marker.bashPath) delete env.CLAUDE_CODE_GIT_BASH_PATH;
-  if (marker && env.CLAUDE_CODE_SHELL === marker.bashPath) delete env.CLAUDE_CODE_SHELL;
+  if (marker && env.CLAUDE_CODE_GIT_BASH_PATH === marker.shell) delete env.CLAUDE_CODE_GIT_BASH_PATH;
+  if (marker && env.CLAUDE_CODE_SHELL === marker.shell) delete env.CLAUDE_CODE_SHELL;
   writeSettings({ ...settings, env });
 
-  if (fs.existsSync(getClaudeWinBashConfigPath())) fs.rmSync(getClaudeWinBashConfigPath(), { force: true });
+  unmarkPlatform('claude');
   if (fs.existsSync(getLegacyClaudeWinBashConfigPath())) fs.rmSync(getLegacyClaudeWinBashConfigPath(), { force: true });
   const skillRoot = path.resolve(getClaudeSkillRoot());
   const skillsRoot = path.resolve(path.join(path.dirname(getClaudeSkillRoot()), '..', 'skills'));

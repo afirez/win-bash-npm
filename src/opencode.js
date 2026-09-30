@@ -2,13 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { commandExists, run } from './process.js';
 import { installBash } from './niubash.js';
+import { markPlatform, getPlatformMarker, unmarkPlatform } from './config.js';
 import {
   getBundledOpencodeSkillRoot,
   getOpencodeConfigPath,
   getOpencodeSkillRoot,
-  getOpencodeWinBashConfigPath,
   getLegacyOpencodeWinBashConfigPath,
-  migrateConfigFile,
 } from './paths.js';
 
 export function applyOpencodeConfig(config, bashPath) {
@@ -45,11 +44,9 @@ export function installOpencode() {
   if (!commandExists('opencode')) throw new Error('opencode CLI not found in PATH');
 
   const bashPath = installBash();
-  migrateConfigFile(getLegacyOpencodeWinBashConfigPath(), getOpencodeWinBashConfigPath());
   writeConfig(applyOpencodeConfig(readJson(getOpencodeConfigPath(), {}), bashPath));
   installSkill();
-  fs.mkdirSync(path.dirname(getOpencodeWinBashConfigPath()), { recursive: true });
-  fs.writeFileSync(getOpencodeWinBashConfigPath(), `${JSON.stringify({ bashPath, installedAt: new Date().toISOString() }, null, 2)}\n`);
+  markPlatform('opencode', bashPath);
 
   console.log(`opencode configured for: ${bashPath}`);
   console.log(`Skill installed: ${getOpencodeSkillRoot()}`);
@@ -67,14 +64,14 @@ export function doctorOpencode() {
 }
 
 export function uninstallOpencode() {
-  const marker = readJson(getOpencodeWinBashConfigPath(), null);
+  const marker = getPlatformMarker('opencode');
   const config = readJson(getOpencodeConfigPath(), {});
-  if (marker && config.shell === marker.bashPath) {
+  if (marker && config.shell === marker.shell) {
     const { shell, ...rest } = config;
     writeConfig(rest);
   }
 
-  if (fs.existsSync(getOpencodeWinBashConfigPath())) fs.rmSync(getOpencodeWinBashConfigPath(), { force: true });
+  unmarkPlatform('opencode');
   if (fs.existsSync(getLegacyOpencodeWinBashConfigPath())) fs.rmSync(getLegacyOpencodeWinBashConfigPath(), { force: true });
   const skillRoot = path.resolve(getOpencodeSkillRoot());
   const skillsRoot = path.resolve(path.join(path.dirname(getOpencodeSkillRoot()), '..', 'skills'));

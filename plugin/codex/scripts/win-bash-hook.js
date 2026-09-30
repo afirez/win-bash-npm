@@ -71,10 +71,16 @@ function isFile(value) {
 }
 
 function migrateLegacyConfig() {
-  if (fs.existsSync(CONFIG_PATH)) return;
   if (!fs.existsSync(LEGACY_CONFIG_PATH)) return;
+  const legacy = (() => { try { return JSON.parse(fs.readFileSync(LEGACY_CONFIG_PATH, 'utf8')); } catch (_) { return {}; } })();
+  if (!legacy || typeof legacy !== 'object' || !legacy.shell) { fs.rmSync(LEGACY_CONFIG_PATH, { force: true }); return; }
+  const config = readConfigRaw();
+  if (!config.shell) config.shell = legacy.shell;
+  config.platforms = config.platforms || {};
+  config.platforms.codex = true;
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-  fs.renameSync(LEGACY_CONFIG_PATH, CONFIG_PATH);
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
+  fs.rmSync(LEGACY_CONFIG_PATH, { force: true });
 }
 
 function readConfig() {
@@ -82,9 +88,17 @@ function readConfig() {
   try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch (_) { return {}; }
 }
 
+function readConfigRaw() {
+  try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch (_) { return {}; }
+}
+
 function writeConfig(shell) {
+  const config = readConfigRaw();
+  config.shell = shell;
+  config.platforms = config.platforms || {};
+  config.platforms.codex = true;
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify({ shell }, null, 2) + '\n');
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
 }
 
 function ensureDefaultRc() {

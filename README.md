@@ -17,17 +17,23 @@ with `npx github:afirez/win-bash-npm`.
 
 ## Configuration
 
-All win-bash configuration files live under `~/.config/win-bash/` (i.e. `C:\Users\<you>\.config\win-bash`).
-Legacy per-host locations are migrated to this directory automatically on install:
+All win-bash platforms (Codex, Claude Code, OpenCode) share a single config file:
 
-| Target | Config file |
+`~/.config/win-bash/win-bash.json`  (i.e. `C:\Users\<you>\.config\win-bash\win-bash.json`)
+
+Legacy per-host config files are automatically merged into this one shared file on
+first install, then removed:
+
+| Legacy location | Contents migrated into |
 | --- | --- |
-| Codex | `~/.config/win-bash/win-bash.json` |
-| Claude Code | `~/.config/win-bash/claude.json` |
-| OpenCode | `~/.config/win-bash/opencode.json` |
+| `~/.codex/win-bash.json` | `shell` + `platforms.codex` |
+| `~/.claude/win-bash.json` | `shell` + `platforms.claude` |
+| `~/.config/opencode/win-bash.json` | `shell` + `platforms.opencode` |
+| `~/.config/win-bash/claude.json` (v0.3.1) | `shell` + `platforms.claude` |
+| `~/.config/win-bash/opencode.json` (v0.3.1) | `shell` + `platforms.opencode` |
 
-Legacy locations (`~/.codex/win-bash.json`, `~/.claude/win-bash.json`, `~/.config/opencode/win-bash.json`)
-are moved to the new directory on first install if the new file does not already exist.
+The shared file keeps a `platforms` marker so `uninstall --target <platform>` removes
+only the settings that this installer recorded, preserving unrelated host settings.
 
 ## Install
 
