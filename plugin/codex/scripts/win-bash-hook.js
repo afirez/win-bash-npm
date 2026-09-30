@@ -15,10 +15,7 @@ const SHELL_TOOLS = new Set(['exec_command', 'functions.exec_command']);
 const LOCAL_APP_DATA = process.env.LOCALAPPDATA || '';
 const CANDIDATES = [
   String.raw`D:\apps\Niubash\winuxcmd\bin\bash.exe`,
-  String.raw`D:\apps\Niubash\niu.exe`,
-  String.raw`F:\studio\apps\Niubash\winuxcmd\bin\bash.exe`,
   LOCAL_APP_DATA ? path.join(LOCAL_APP_DATA, 'Niubash', 'winuxcmd', 'bin', 'bash.exe') : '',
-  LOCAL_APP_DATA ? path.join(LOCAL_APP_DATA, 'Niubash', 'niu.exe') : '',
 ].filter(Boolean);
 
 const DEFAULT_RC = [
@@ -120,7 +117,7 @@ function resolveBash() {
   if (process.env.WIN_BASH_PATH) candidates.push(process.env.WIN_BASH_PATH);
   const config = readConfig();
   if (config.shell) candidates.push(config.shell);
-  candidates.push(...CANDIDATES, ...whereBash().filter((value) => /niubash/i.test(value)));
+  candidates.push(...CANDIDATES, ...whereBash().filter((value) => /winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(value)));
   for (const candidate of candidates) {
     if (isFile(candidate)) return candidate;
   }

@@ -3,36 +3,38 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { migrateConfig, markPlatform, getPlatformMarker, unmarkPlatform } from '../src/config.js';
-import {
-  SHARED_BASH_PATH,
-  LEGACY_BASH_PATH,
-  INTERMEDIATE_BASH_PATH,
-  INSTALLED_AT_LEGACY,
-  INSTALLED_AT_INTERMEDIATE,
-  withTempHome,
-} from './helpers.js';
+import { withTempHome } from './helpers.js';
 
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+// Neutral source markers for migration-precedence assertions, plus
+// runtime-generated install timestamps. No machine paths, no models, and no
+// fixed timestamps.
+const sharedShell = 'shared';
+const legacyShell = 'legacy';
+const intermediateShell = 'intermediate';
+const installedAtLegacy = new Date(Date.now() - 60_000).toISOString();
+const installedAtIntermediate = new Date().toISOString();
+
 test('migrateConfig merges legacy per-host configs into single ~/.config/win-bash/win-bash.json', () => {
   withTempHome((home) => {
-    writeJson(path.join(home, '.codex', 'win-bash.json'), { shell: LEGACY_BASH_PATH });
-    writeJson(path.join(home, '.claude', 'win-bash.json'), { bashPath: LEGACY_BASH_PATH, installedAt: INSTALLED_AT_LEGACY });
-    writeJson(path.join(home, '.config', 'opencode', 'win-bash.json'), { bashPath: LEGACY_BASH_PATH, installedAt: INSTALLED_AT_INTERMEDIATE });
+    writeJson(path.join(home, '.codex', 'win-bash.json'), { shell: legacyShell });
+    writeJson(path.join(home, '.claude', 'win-bash.json'), { bashPath: legacyShell, installedAt: installedAtLegacy });
+    writeJson(path.join(home, '.config', 'opencode', 'win-bash.json'), { bashPath: legacyShell, installedAt: installedAtIntermediate });
 
     const config = migrateConfig();
 
-    assert.equal(config.shell, LEGACY_BASH_PATH);
+    assert.equal(config.shell, legacyShell);
     assert.equal(config.platforms.codex, true);
     assert.equal(config.platforms.claude, true);
     assert.equal(config.platforms.opencode, true);
-    assert.equal(config.installedAt, INSTALLED_AT_LEGACY);
+    assert.equal(config.installedAt, installedAtLegacy);
 
     const shared = JSON.parse(fs.readFileSync(path.join(home, '.config', 'win-bash', 'win-bash.json'), 'utf8'));
-    assert.equal(shared.shell, LEGACY_BASH_PATH);
+    assert.equal(shared.shell, legacyShell);
     assert.equal(fs.existsSync(path.join(home, '.codex', 'win-bash.json')), false);
     assert.equal(fs.existsSync(path.join(home, '.claude', 'win-bash.json')), false);
     assert.equal(fs.existsSync(path.join(home, '.config', 'opencode', 'win-bash.json')), false);
@@ -41,12 +43,12 @@ test('migrateConfig merges legacy per-host configs into single ~/.config/win-bas
 
 test('markPlatform and unmarkPlatform record per-platform markers in the shared file', () => {
   withTempHome((home) => {
-    markPlatform('claude', SHARED_BASH_PATH);
-    markPlatform('opencode', SHARED_BASH_PATH);
+    markPlatform('claude', sharedShell);
+    markPlatform('opencode', sharedShell);
 
     const claudeMarker = getPlatformMarker('claude');
     assert.equal(claudeMarker.installed, true);
-    assert.equal(claudeMarker.shell, SHARED_BASH_PATH);
+    assert.equal(claudeMarker.shell, sharedShell);
     assert.equal(getPlatformMarker('codex'), null);
 
     unmarkPlatform('claude');
@@ -61,8 +63,8 @@ test('markPlatform and unmarkPlatform record per-platform markers in the shared 
 
 test('migrateConfig absorbs codex legacy even when shared shell already exists', () => {
   withTempHome((home) => {
-    writeJson(path.join(home, '.config', 'win-bash', 'win-bash.json'), { shell: SHARED_BASH_PATH, platforms: { claude: true } });
-    writeJson(path.join(home, '.codex', 'win-bash.json'), { shell: SHARED_BASH_PATH });
+    writeJson(path.join(home, '.config', 'win-bash', 'win-bash.json'), { shell: sharedShell, platforms: { claude: true } });
+    writeJson(path.join(home, '.codex', 'win-bash.json'), { shell: sharedShell });
 
     const config = migrateConfig();
     assert.equal(config.platforms.codex, true);
@@ -73,12 +75,12 @@ test('migrateConfig absorbs codex legacy even when shared shell already exists',
 
 test('migrateConfig cleans all sources when legacy and intermediate coexist', () => {
   withTempHome((home) => {
-    writeJson(path.join(home, '.claude', 'win-bash.json'), { bashPath: LEGACY_BASH_PATH, installedAt: INSTALLED_AT_LEGACY });
-    writeJson(path.join(home, '.config', 'win-bash', 'claude.json'), { bashPath: INTERMEDIATE_BASH_PATH, installedAt: INSTALLED_AT_INTERMEDIATE });
+    writeJson(path.join(home, '.claude', 'win-bash.json'), { bashPath: legacyShell, installedAt: installedAtLegacy });
+    writeJson(path.join(home, '.config', 'win-bash', 'claude.json'), { bashPath: intermediateShell, installedAt: installedAtIntermediate });
 
     const config = migrateConfig();
     assert.equal(config.platforms.claude, true);
-    assert.equal(config.shell, LEGACY_BASH_PATH, 'legacy shell should win');
+    assert.equal(config.shell, legacyShell, 'legacy shell should win');
     assert.equal(fs.existsSync(path.join(home, '.claude', 'win-bash.json')), false);
     assert.equal(fs.existsSync(path.join(home, '.config', 'win-bash', 'claude.json')), false);
   });

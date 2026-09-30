@@ -31,17 +31,19 @@ function whereBash() {
   }
 }
 
+// A Niubash Bash must always be *\winuxcmd\bin\bash.exe: never niu.exe, never
+// the usr\bin variant, and never anchored to a specific install root.
+export function isWinuxBashPath(value) {
+  return /winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(value);
+}
+
 export function resolveBashPath() {
   const candidates = [
     process.env.WIN_BASH_PATH,
     configShell(),
     'D:\\apps\\Niubash\\winuxcmd\\bin\\bash.exe',
-    'D:\\apps\\Niubash\\niu.exe',
-    'F:\\studio\\apps\\Niubash\\winuxcmd\\bin\\bash.exe',
-    'F:\\studio\\apps\\Niubash\\niu.exe',
     localAppData ? path.join(localAppData, 'Niubash', 'winuxcmd', 'bin', 'bash.exe') : null,
-    localAppData ? path.join(localAppData, 'Niubash', 'niu.exe') : null,
-    ...whereBash().filter((value) => /niubash/i.test(value)),
+    ...whereBash().filter(isWinuxBashPath),
   ].filter(Boolean);
   return candidates.find(isFile) || null;
 }

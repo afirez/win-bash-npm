@@ -28,22 +28,6 @@ function Resolve-WinBash {
     return $result.shell
 }
 
-function Find-NiuExecutable {
-    $roots = @(
-        $InstallDir,
-        (Join-Path $env:LOCALAPPDATA 'Niubash'),
-        (Join-Path $env:ProgramFiles 'Niubash'),
-        'F:\studio\apps\Niubash'
-    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) }
-    foreach ($root in $roots) {
-        $candidate = Join-Path $root 'niu.exe'
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
-        $found = Get-ChildItem -LiteralPath $root -Recurse -Filter 'niu.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) { return $found.FullName }
-    }
-    return $null
-}
-
 function Install-PortableNiubash {
     $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
     $asset = "niubash-win-$arch.zip"
@@ -70,8 +54,8 @@ function Install-PortableNiubash {
     Push-Location $InstallDir
     try { & $installedNiu 'winuxcmd/activate-winuxcmd.sh' | Out-Host } finally { Pop-Location }
     $bash = Join-Path $InstallDir 'winuxcmd\bin\bash.exe'
-    if (Test-Path -LiteralPath $bash -PathType Leaf) { return $bash }
-    return $installedNiu
+    if (-not (Test-Path -LiteralPath $bash -PathType Leaf)) { throw "Niubash install produced no winuxcmd\bin\bash.exe at $InstallDir" }
+    return $bash
 }
 
 $resolved = Resolve-WinBash
