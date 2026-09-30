@@ -2,26 +2,29 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// Neutral Windows paths and identifiers shared by the test suite.
-// These do NOT reference any real machine's Niubash install; tests must not
-// depend on a specific host path. Windows-style separators keep the fixtures
-// representative of real win-bash configs.
+// Test fixtures. None of these paths reference a real Niubash install or a
+// real file: applyClaudeEnv/applyOpencodeConfig only merge JSON, and
+// migrateConfig never checks that a Bash executable exists. Every path below
+// uses an obviously-fake "win-bash-test-fixture" root so readers never mistake
+// it for a real machine path.
 
-// A representative absolute Bash executable path (host-independent).
-export const BASH_PATH = 'C:\\Niubash\\winuxcmd\\bin\\bash.exe';
+// A representative absolute Bash executable path passed as the bashPath
+// argument to the pure merge functions.
+export const BASH_PATH = 'C:\\win-bash-test-fixture\\bash.exe';
 
-// Migration fixture paths: shared config shell, legacy per-host shell, and the
-// v0.3.1 intermediate-file shell. Distinct values so tests can assert which
-// source wins.
-export const SHARED_BASH_PATH = 'C:\\shared\\bash.exe';
-export const LEGACY_BASH_PATH = 'C:\\legacy\\bash.exe';
-export const INTERMEDIATE_BASH_PATH = 'C:\\intermediate\\bash.exe';
+// Migration fixture shells: shared config shell, legacy per-host shell, and
+// the v0.3.1 intermediate-file shell. Distinct values let tests assert which
+// source wins during migration.
+export const SHARED_BASH_PATH = 'C:\\win-bash-test-fixture\\shared\\bash.exe';
+export const LEGACY_BASH_PATH = 'C:\\win-bash-test-fixture\\legacy\\bash.exe';
+export const INTERMEDIATE_BASH_PATH = 'C:\\win-bash-test-fixture\\intermediate\\bash.exe';
 
 // Arbitrary installedAt timestamps for migration fixtures.
 export const INSTALLED_AT_LEGACY = '2026-01-01T00:00:00.000Z';
 export const INSTALLED_AT_INTERMEDIATE = '2026-01-02T00:00:00.000Z';
 
-// Neutral model identifiers for host-config merge tests.
+// Neutral model identifiers used as "unrelated fields" that the host-config
+// merge functions must preserve. Deliberately not real model names.
 export const MODEL_CLAUDE = 'claude-model-test';
 export const MODEL_OPENCODE = 'opencode-model-test';
 export const MODEL_ARCHITECT = 'architect-model-test';
