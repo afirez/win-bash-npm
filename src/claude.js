@@ -7,6 +7,8 @@ import {
   getClaudeSettingsPath,
   getClaudeSkillRoot,
   getClaudeWinBashConfigPath,
+  getLegacyClaudeWinBashConfigPath,
+  migrateConfigFile,
 } from './paths.js';
 
 export function applyClaudeEnv(settings, bashPath) {
@@ -50,6 +52,7 @@ export function installClaude() {
   if (!commandExists('claude')) throw new Error('claude CLI not found in PATH');
 
   const bashPath = installBash();
+  migrateConfigFile(getLegacyClaudeWinBashConfigPath(), getClaudeWinBashConfigPath());
   writeSettings(applyClaudeEnv(readJson(getClaudeSettingsPath(), {}), bashPath));
   installSkill();
   fs.mkdirSync(path.dirname(getClaudeWinBashConfigPath()), { recursive: true });
@@ -80,6 +83,7 @@ export function uninstallClaude() {
   writeSettings({ ...settings, env });
 
   if (fs.existsSync(getClaudeWinBashConfigPath())) fs.rmSync(getClaudeWinBashConfigPath(), { force: true });
+  if (fs.existsSync(getLegacyClaudeWinBashConfigPath())) fs.rmSync(getLegacyClaudeWinBashConfigPath(), { force: true });
   const skillRoot = path.resolve(getClaudeSkillRoot());
   const skillsRoot = path.resolve(path.join(path.dirname(getClaudeSkillRoot()), '..', 'skills'));
   if (skillRoot.startsWith(skillsRoot) && fs.existsSync(skillRoot)) fs.rmSync(skillRoot, { recursive: true, force: true });

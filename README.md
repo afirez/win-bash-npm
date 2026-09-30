@@ -2,7 +2,7 @@
 
 Windows installer for the `win-bash` integration.
 
-- npm package version: `0.3.0`
+- npm package version: `0.3.1`
 - Codex support: `exec_command.shell` injection through the bundled plugin
 - Claude Code support: official `CLAUDE_CODE_GIT_BASH_PATH` / `CLAUDE_CODE_SHELL` settings plus a `win-bash` skill
 - OpenCode support: `shell` config key plus a `win-bash` skill
@@ -13,6 +13,21 @@ This package is distributed from the public GitHub repository
 [`afirez/win-bash-npm`](https://github.com/afirez/win-bash-npm). It is not
 published to the npm registry yet, so install and run it directly from GitHub
 with `npx github:afirez/win-bash-npm`.
+
+
+## Configuration
+
+All win-bash configuration files live under `~/.config/win-bash/` (i.e. `C:\Users\<you>\.config\win-bash`).
+Legacy per-host locations are migrated to this directory automatically on install:
+
+| Target | Config file |
+| --- | --- |
+| Codex | `~/.config/win-bash/win-bash.json` |
+| Claude Code | `~/.config/win-bash/claude.json` |
+| OpenCode | `~/.config/win-bash/opencode.json` |
+
+Legacy locations (`~/.codex/win-bash.json`, `~/.claude/win-bash.json`, `~/.config/opencode/win-bash.json`)
+are moved to the new directory on first install if the new file does not already exist.
 
 ## Install
 

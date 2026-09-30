@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { runPowerShell } from './process.js';
-import { getBundledPluginRoot, getWinBashConfigPath } from './paths.js';
+import { getBundledPluginRoot, getLegacyWinBashConfigPath, getWinBashConfigPath, migrateConfigFile } from './paths.js';
 
 const localAppData = process.env.LOCALAPPDATA || '';
 
@@ -16,6 +16,7 @@ function isFile(candidate) {
 }
 
 function configShell() {
+  migrateConfigFile(getLegacyWinBashConfigPath(), getWinBashConfigPath());
   try {
     return JSON.parse(fs.readFileSync(getWinBashConfigPath(), 'utf8')).shell;
   } catch {

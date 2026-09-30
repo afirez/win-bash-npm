@@ -7,7 +7,8 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const CODEX_HOME = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
-const CONFIG_PATH = path.join(CODEX_HOME, 'win-bash.json');
+const CONFIG_PATH = path.join(os.homedir(), '.config', 'win-bash', 'win-bash.json');
+const LEGACY_CONFIG_PATH = path.join(CODEX_HOME, 'win-bash.json');
 const RC_PATH = path.join(os.homedir(), '.niubashrc');
 const LEGACY_RC_PATH = path.join(os.homedir(), '.winshrc');
 const SHELL_TOOLS = new Set(['exec_command', 'functions.exec_command']);
@@ -69,7 +70,15 @@ function isFile(value) {
   try { return fs.statSync(value).isFile(); } catch (_) { return false; }
 }
 
+function migrateLegacyConfig() {
+  if (fs.existsSync(CONFIG_PATH)) return;
+  if (!fs.existsSync(LEGACY_CONFIG_PATH)) return;
+  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+  fs.renameSync(LEGACY_CONFIG_PATH, CONFIG_PATH);
+}
+
 function readConfig() {
+  migrateLegacyConfig();
   try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch (_) { return {}; }
 }
 

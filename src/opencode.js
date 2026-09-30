@@ -7,6 +7,8 @@ import {
   getOpencodeConfigPath,
   getOpencodeSkillRoot,
   getOpencodeWinBashConfigPath,
+  getLegacyOpencodeWinBashConfigPath,
+  migrateConfigFile,
 } from './paths.js';
 
 export function applyOpencodeConfig(config, bashPath) {
@@ -43,6 +45,7 @@ export function installOpencode() {
   if (!commandExists('opencode')) throw new Error('opencode CLI not found in PATH');
 
   const bashPath = installBash();
+  migrateConfigFile(getLegacyOpencodeWinBashConfigPath(), getOpencodeWinBashConfigPath());
   writeConfig(applyOpencodeConfig(readJson(getOpencodeConfigPath(), {}), bashPath));
   installSkill();
   fs.mkdirSync(path.dirname(getOpencodeWinBashConfigPath()), { recursive: true });
@@ -72,6 +75,7 @@ export function uninstallOpencode() {
   }
 
   if (fs.existsSync(getOpencodeWinBashConfigPath())) fs.rmSync(getOpencodeWinBashConfigPath(), { force: true });
+  if (fs.existsSync(getLegacyOpencodeWinBashConfigPath())) fs.rmSync(getLegacyOpencodeWinBashConfigPath(), { force: true });
   const skillRoot = path.resolve(getOpencodeSkillRoot());
   const skillsRoot = path.resolve(path.join(path.dirname(getOpencodeSkillRoot()), '..', 'skills'));
   if (skillRoot.startsWith(skillsRoot) && fs.existsSync(skillRoot)) fs.rmSync(skillRoot, { recursive: true, force: true });

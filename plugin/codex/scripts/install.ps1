@@ -16,7 +16,9 @@ if (-not $InstallDir) {
 }
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
 $hook = Join-Path $PSScriptRoot 'win-bash-hook.js'
-$config = Join-Path $codexHome 'win-bash.json'
+$configDir = Join-Path $HOME '.config\win-bash'
+$config = Join-Path $configDir 'win-bash.json'
+$legacyConfig = Join-Path $codexHome 'win-bash.json'
 $rc = Join-Path $HOME '.niubashrc'
 $legacyRc = Join-Path $HOME '.winshrc'
 
@@ -92,6 +94,10 @@ if (-not $resolved) {
 }
 
 if (-not $SkipConfig) {
+    if (-not (Test-Path -LiteralPath $config -PathType Leaf) -and (Test-Path -LiteralPath $legacyConfig -PathType Leaf)) {
+        New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+        Move-Item -LiteralPath $legacyConfig -Destination $config -Force
+    }
     $env:WIN_BASH_PATH = $resolved
     $cfg = & node $hook configure | ConvertFrom-Json
     if (-not $cfg.ok) { throw "win-bash configure failed" }

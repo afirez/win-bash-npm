@@ -17,6 +17,10 @@ export function getClaudeHome() {
   return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 }
 
+export function getWinBashConfigDir() {
+  return path.join(os.homedir(), '.config', 'win-bash');
+}
+
 export function getBundledPluginRoot() {
   return path.join(packageRoot, 'plugin', 'codex');
 }
@@ -42,6 +46,10 @@ export function getInstalledPluginRoot() {
 }
 
 export function getWinBashConfigPath() {
+  return path.join(getWinBashConfigDir(), 'win-bash.json');
+}
+
+export function getLegacyWinBashConfigPath() {
   return path.join(getCodexHome(), 'win-bash.json');
 }
 
@@ -54,6 +62,10 @@ export function getClaudeSettingsPath() {
 }
 
 export function getClaudeWinBashConfigPath() {
+  return path.join(getWinBashConfigDir(), 'claude.json');
+}
+
+export function getLegacyClaudeWinBashConfigPath() {
   return path.join(getClaudeHome(), 'win-bash.json');
 }
 
@@ -78,9 +90,22 @@ export function getOpencodeSkillRoot() {
 }
 
 export function getOpencodeWinBashConfigPath() {
+  return path.join(getWinBashConfigDir(), 'opencode.json');
+}
+
+export function getLegacyOpencodeWinBashConfigPath() {
   return path.join(getOpencodeHome(), 'win-bash.json');
 }
 
 export function getBundledOpencodeSkillRoot() {
   return path.join(packageRoot, 'plugin', 'opencode', 'skills', 'win-bash');
+}
+
+export function migrateConfigFile(legacyPath, currentPath) {
+  if (!legacyPath || !currentPath) return { migrated: false, reason: 'invalid-path' };
+  if (fs.existsSync(currentPath)) return { migrated: false, reason: 'target-exists' };
+  if (!fs.existsSync(legacyPath)) return { migrated: false, reason: 'legacy-missing' };
+  fs.mkdirSync(path.dirname(currentPath), { recursive: true });
+  fs.renameSync(legacyPath, currentPath);
+  return { migrated: true, reason: 'migrated' };
 }

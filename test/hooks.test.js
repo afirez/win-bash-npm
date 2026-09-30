@@ -13,3 +13,9 @@ test('PreToolUse hook never injects additionalContext', () => {
   assert.equal(hook.includes("emitContext('PreToolUse'"), false);
   assert.equal(hook.includes('additionalContext: `win-bash set exec_command.shell'), false);
 });
+
+test('hook resolves config under ~/.config/win-bash/', () => {
+  const hook = fs.readFileSync(path.join(getBundledPluginRoot(), 'scripts', 'win-bash-hook.js'), 'utf8');
+  assert.ok(hook.includes("'.config', 'win-bash', 'win-bash.json'"), 'hook CONFIG_PATH must point into ~/.config/win-bash');
+  assert.ok(hook.includes('LEGACY_CONFIG_PATH'), 'hook must keep legacy fallback path');
+});

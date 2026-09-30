@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { run } from './process.js';
 import { installBash, resolveBashPath } from './niubash.js';
-import { getNiubashRcPath, getWinBashConfigPath } from './paths.js';
+import { getLegacyWinBashConfigPath, getNiubashRcPath, getWinBashConfigPath, migrateConfigFile } from './paths.js';
 
 export function findInstallRoot(shellPath) {
   let current = path.dirname(shellPath);
@@ -46,6 +46,7 @@ export function bashUninstall() {
   }
   fs.rmSync(installRoot, { recursive: true, force: true });
   const configPath = getWinBashConfigPath();
+  migrateConfigFile(getLegacyWinBashConfigPath(), configPath);
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     if (String(config.shell || '').startsWith(installRoot)) fs.rmSync(configPath, { force: true });
