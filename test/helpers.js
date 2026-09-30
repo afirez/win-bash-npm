@@ -2,22 +2,25 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// Test fixtures. None of these paths reference a real Niubash install or a
-// real file: applyClaudeEnv/applyOpencodeConfig only merge JSON, and
-// migrateConfig never checks that a Bash executable exists. Every path below
-// uses an obviously-fake "win-bash-test-fixture" root so readers never mistake
-// it for a real machine path.
+// BASH_PATH is the real, host-resolved default Bash (Niubash) on this machine:
+// it is what `where bash.exe` returns first from PATH. It is the representative
+// shell path passed to the pure merge functions (which only merge JSON and
+// never touch the filesystem).
 
-// A representative absolute Bash executable path passed as the bashPath
-// argument to the pure merge functions.
-export const BASH_PATH = 'C:\\win-bash-test-fixture\\bash.exe';
+// SHARED/LEGACY/INTERMEDIATE_BASH_PATH are PURELY FICTIONAL migration-test
+// placeholders. migrateConfig only reads and writes JSON and never checks that
+// a Bash executable exists, so these only need to be distinct strings so tests
+// can assert which migration source wins. The obvious fake root
+// (win-bash-test-fixture) prevents mistaking them for real paths.
+
+export const BASH_PATH = 'F:\studio\apps\Niubash\winuxcmd\bin\bash.exe';
 
 // Migration fixture shells: shared config shell, legacy per-host shell, and
 // the v0.3.1 intermediate-file shell. Distinct values let tests assert which
 // source wins during migration.
-export const SHARED_BASH_PATH = 'C:\\win-bash-test-fixture\\shared\\bash.exe';
-export const LEGACY_BASH_PATH = 'C:\\win-bash-test-fixture\\legacy\\bash.exe';
-export const INTERMEDIATE_BASH_PATH = 'C:\\win-bash-test-fixture\\intermediate\\bash.exe';
+export const SHARED_BASH_PATH = 'C:\win-bash-test-fixture\shared\bash.exe';
+export const LEGACY_BASH_PATH = 'C:\win-bash-test-fixture\legacy\bash.exe';
+export const INTERMEDIATE_BASH_PATH = 'C:\win-bash-test-fixture\intermediate\bash.exe';
 
 // Arbitrary installedAt timestamps for migration fixtures.
 export const INSTALLED_AT_LEGACY = '2026-01-01T00:00:00.000Z';
