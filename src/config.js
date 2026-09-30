@@ -22,39 +22,43 @@ function writeConfig(config) {
   fs.writeFileSync(getWinBashConfigPath(), `${JSON.stringify(config, null, 2)}\n`);
 }
 
-// Merge a legacy/intermediate per-platform config file into the unified file,
-// then delete the source file. Each platform migrates at most once.
-function absorb(filePath, platform, config, changed) {
-  if (!filePath || config.platforms[platform]) return changed;
-  const source = readJson(filePath);
-  if (!source || !source.bashPath) return changed;
-  if (!config.shell) config.shell = source.bashPath;
-  if (!config.installedAt) config.installedAt = source.installedAt;
-  config.platforms[platform] = true;
-  fs.rmSync(filePath, { force: true });
-  return true;
-}
+// All per-platform legacy/intermediate locations that must be absorbed into the
+// single shared file. Order matters: earlier files win when shell is absent.
+const PLATFORM_SOURCES = {
+  codex: [getLegacyWinBashConfigPath],
+  claude: [getLegacyClaudeWinBashConfigPath, getClaudeWinBashIntermediateConfigPath],
+  opencode: [getLegacyOpencodeWinBashConfigPath, getOpencodeWinBashIntermediateConfigPath],
+};
 
-// Migrate all legacy per-host configs plus the v0.3.1 intermediate files into
-// the single shared config at ~/.config/win-bash/win-bash.json.
+// Migrate every legacy per-host config plus the v0.3.1 intermediate files into
+// the single shared config at ~/.config/win-bash/win-bash.json, then remove the
+// source files. Idempotent and safe on repeated runs.
 export function migrateConfig() {
   let config = readJson(getWinBashConfigPath()) || {};
   config.platforms = config.platforms || {};
   let changed = false;
 
-  // Codex legacy: ~/.codex/win-bash.json holds { shell }.
-  const legacyCodex = readJson(getLegacyWinBashConfigPath());
-  if (legacyCodex && legacyCodex.shell && !config.shell) {
-    config.shell = legacyCodex.shell;
-    config.platforms.codex = true;
-    fs.rmSync(getLegacyWinBashConfigPath(), { force: true });
-    changed = true;
+  for (const [platform, sourceGetters] of Object.entries(PLATFORM_SOURCES)) {
+    const sources = sourceGetters.map((getter) => getter());
+    if (!config.platforms[platform]) {
+      for (const source of sources) {
+        const file = readJson(source);
+        if (!file) continue;
+        if (!config.shell) config.shell = file.shell || file.bashPath || null;
+        if (!config.installedAt) config.installedAt = file.installedAt || null;
+        if (config.shell || config.installedAt) {
+          config.platforms[platform] = true;
+          break;
+        }
+      }
+    }
+    for (const source of sources) {
+      if (fs.existsSync(source)) {
+        fs.rmSync(source, { force: true });
+        changed = true;
+      }
+    }
   }
-
-  changed = absorb(getLegacyClaudeWinBashConfigPath(), 'claude', config, changed) || changed;
-  changed = absorb(getClaudeWinBashIntermediateConfigPath(), 'claude', config, changed) || changed;
-  changed = absorb(getLegacyOpencodeWinBashConfigPath(), 'opencode', config, changed) || changed;
-  changed = absorb(getOpencodeWinBashIntermediateConfigPath(), 'opencode', config, changed) || changed;
 
   if (changed) writeConfig(config);
   return config;

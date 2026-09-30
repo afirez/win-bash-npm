@@ -78,3 +78,34 @@ test('markPlatform and unmarkPlatform record per-platform markers in the shared 
     assert.equal(shared.platforms.opencode, true);
   });
 });
+
+test('migrateConfig absorbs codex legacy even when shared shell already exists', () => {
+  withTempHome((home) => {
+    // shared file exists with shell (e.g. claude installed first) + stale codex legacy
+    fs.mkdirSync(path.join(home, '.config', 'win-bash'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.config', 'win-bash', 'win-bash.json'), JSON.stringify({ shell: 'C:\\shared\\bash.exe', platforms: { claude: true } }));
+    fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.codex', 'win-bash.json'), JSON.stringify({ shell: 'C:\\shared\\bash.exe' }));
+
+    const config = migrateConfig();
+    assert.equal(config.platforms.codex, true);
+    assert.equal(config.platforms.claude, true);
+    assert.equal(fs.existsSync(path.join(home, '.codex', 'win-bash.json')), false);
+  });
+});
+
+test('migrateConfig cleans all sources when legacy and intermediate coexist', () => {
+  withTempHome((home) => {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude', 'win-bash.json'), JSON.stringify({ bashPath: 'C:\\legacy\\bash.exe', installedAt: '2026-01-01' }));
+    fs.mkdirSync(path.join(home, '.config', 'win-bash'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.config', 'win-bash', 'claude.json'), JSON.stringify({ bashPath: 'C:\\intermediate\\bash.exe', installedAt: '2026-01-02' }));
+
+    const config = migrateConfig();
+    assert.equal(config.platforms.claude, true);
+    assert.equal(config.shell, 'C:\\legacy\\bash.exe', 'legacy shell should win');
+    assert.equal(fs.existsSync(path.join(home, '.claude', 'win-bash.json')), false);
+    assert.equal(fs.existsSync(path.join(home, '.config', 'win-bash', 'claude.json')), false);
+  });
+});
+
