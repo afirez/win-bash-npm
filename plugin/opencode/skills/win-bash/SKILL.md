@@ -28,3 +28,10 @@ opencode is configured to run its bash tool through Niubash Bash on Windows.
 
 - If the bash tool falls back to PowerShell/cmd, confirm `~/.config/opencode/opencode.json` still has `shell` set to the Niubash Bash path and that Niubash's `bin` directory is on PATH (run `win-bash doctor --target opencode`).
 - Do not replace the configured shell with Git Bash, WSL, or a bare `bash`.
+
+## Fallback
+
+If Niubash cannot be resolved or installed, `win-bash install --target opencode`
+statically writes the standard Git Bash, then PowerShell 7 (`pwsh`), into the
+`shell` config key so opencode still gets a working shell. Re-run the install
+after restoring Niubash to switch back.

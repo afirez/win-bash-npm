@@ -127,7 +127,9 @@ The hook is intentionally silent: it only writes `updatedInput.shell`. It must n
 
 For Claude Code, the CLI:
 
-1. Resolves or installs Niubash Bash.
+1. Resolves Niubash Bash (installing it if missing). If Niubash cannot be
+   obtained, it falls back to the standard Git Bash, then to PowerShell 7
+   (`pwsh`), so Claude Code always gets a working shell.
 2. Merges `CLAUDE_CODE_GIT_BASH_PATH` and `CLAUDE_CODE_SHELL` into `~/.claude/settings.json`.
 3. Installs the `win-bash` skill under `~/.claude/skills/win-bash`.
 
@@ -137,7 +139,9 @@ Unrelated Claude Code settings are preserved. `uninstall --target claude` remove
 
 For OpenCode, the CLI:
 
-1. Resolves or installs Niubash Bash.
+1. Resolves Niubash Bash (installing it if missing). If Niubash cannot be
+   obtained, it falls back to the standard Git Bash, then to PowerShell 7
+   (`pwsh`), so OpenCode always gets a working shell.
 2. Merges the `shell` key into `~/.config/opencode/opencode.json` (backing up the original first).
 3. Installs the `win-bash` skill under `~/.config/opencode/skills/win-bash`.
 

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { commandExists, run } from './process.js';
-import { installBash } from './niubash.js';
+import { resolveShellForInstall } from './niubash.js';
 import { markPlatform, getPlatformMarker, unmarkPlatform } from './config.js';
 import {
   getBundledOpencodeSkillRoot,
@@ -43,7 +43,7 @@ export function installOpencode() {
   if (process.platform !== 'win32') throw new Error('win-bash opencode support only supports Windows');
   if (!commandExists('opencode')) throw new Error('opencode CLI not found in PATH');
 
-  const bashPath = installBash();
+  const bashPath = resolveShellForInstall();
   writeConfig(applyOpencodeConfig(readJson(getOpencodeConfigPath(), {}), bashPath));
   installSkill();
   markPlatform('opencode', bashPath);

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { commandExists, run } from './process.js';
-import { installBash } from './niubash.js';
+import { resolveShellForInstall } from './niubash.js';
 import { markPlatform, getPlatformMarker, unmarkPlatform } from './config.js';
 import {
   getBundledClaudeSkillRoot,
@@ -50,7 +50,7 @@ export function installClaude() {
   if (process.platform !== 'win32') throw new Error('win-bash Claude support only supports Windows');
   if (!commandExists('claude')) throw new Error('claude CLI not found in PATH');
 
-  const bashPath = installBash();
+  const bashPath = resolveShellForInstall();
   writeSettings(applyClaudeEnv(readJson(getClaudeSettingsPath(), {}), bashPath));
   installSkill();
   markPlatform('claude', bashPath);

@@ -14,3 +14,10 @@ This environment is configured to use Niubash Bash for Claude Code shell operati
 3. Verify the active shell with `printf 'bash=%s\n' "$BASH_VERSION"` when behavior is unexpected.
 4. Do not replace `CLAUDE_CODE_GIT_BASH_PATH` or `CLAUDE_CODE_SHELL` with Git Bash, WSL, or a bare `bash`.
 5. Use PowerShell only when a Windows-native operation cannot run in Bash.
+
+## Fallback
+
+If Niubash cannot be resolved or installed, `win-bash install --target claude`
+statically writes the standard Git Bash, then PowerShell 7 (`pwsh`), into
+`CLAUDE_CODE_GIT_BASH_PATH` / `CLAUDE_CODE_SHELL` so Claude Code still gets a
+working shell. Re-run the install after restoring Niubash to switch back.
