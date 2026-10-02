@@ -69,3 +69,11 @@ rejects `winuxcmd\bin\bash.exe` so a Niubash-valued `OMO_CODEX_GIT_BASH_PATH`
 kept only for session-start/configure/doctor. No `additionalContext` in
 PreToolUse. Session restart still required for the running Codex session to load
 the new hook.
+
+## User adjustment (2026-10-03): bare bash -> Niubash
+
+- `bash` command execution (`bash -c '...'`, `bash <cmd>`) -> Niubash Bash.
+- `bash` running a `.sh` script or using `awk` -> Git Bash (Niubash has no awk).
+- `.sh`/`./x.sh`/`sh x.sh` -> Git Bash (unchanged).
+- Verified: Niubash `awk: command not found`; Git Bash awk OK.
+- Commit `d9cbc34`; cache 0.1.4 reinstalled; 22/22 tests green.
