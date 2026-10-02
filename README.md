@@ -99,8 +99,9 @@ The PreToolUse hook routes each `exec_command` to the right shell:
   ship with. Git dirs are appended after Niubash's PATH so Niubash's own
   `bash`/`sed`/`grep`/`find` stay primary and an inner `bash` still resolves
   to Niubash. The standard Git Bash is discovered dynamically (env override,
-  `bash.exe`/`git.exe` on PATH, Git for Windows registry) and never hardcoded.
-  When no Niubash is installed, these fall back to the standard Git Bash.
+  `bash.exe`/`git.exe` on PATH, Git for Windows registry), with the common
+  install roots as a last-resort fallback when nothing dynamic matches. When
+  no Niubash is installed, these fall back to the standard Git Bash.
 - Windows-native operations that genuinely need a Windows shell are **left on
   the host PowerShell**: `psmux`/`pmux`/`tmux`, `powershell`/`pwsh` when RUN as
   a command, PowerShell Verb-Noun cmdlets (`Get-Content`, `Select-String`),

@@ -321,12 +321,16 @@ test('hook DEFAULT_RC lets Niubash inherit standard Git Bash commands', () => {
   assert.equal(hook.includes('PROGRAMFILES/Git'), false, 'rc must not hardcode a Git install root');
 });
 
-test('hook resolves Git Bash dynamically and never hardcodes install roots', () => {
+test('hook resolves Git Bash dynamically with common install roots as a last-resort fallback', () => {
   const hook = fs.readFileSync(path.join(getBundledPluginRoot(), 'scripts', 'win-bash-hook.js'), 'utf8');
   assert.ok(hook.includes('gitRegistryInstallPath'), 'hook must read the GitForWindows registry install path');
   assert.ok(hook.includes('whereGitRoots'), 'hook must derive Git roots from git.exe on PATH');
   assert.ok(hook.includes("whereBash().filter((value) => /git"), 'hook must find Git bash.exe on PATH dynamically');
-  assert.equal(hook.includes(String.raw`C:\Program Files\Gitinash.exe`), false, 'hook must not hardcode the Git bin path');
-  assert.equal(hook.includes('Program Files (x86)'), false, 'hook must not hardcode the 32-bit Git root');
-  assert.equal(hook.includes("'Programs', 'Git'"), false, 'hook must not hardcode a LOCALAPPDATA Git root');
+  assert.ok(hook.includes('GIT_FALLBACK_ROOTS'), 'hook must carry a common-roots fallback list');
+  assert.ok(hook.includes(String.raw`C:\Program Files\Git`), 'hook must fall back to the default Git root');
+  assert.ok(hook.includes('Program Files (x86)'), 'hook must fall back to the 32-bit Git root');
+  assert.ok(hook.includes("'Programs', 'Git'"), 'hook must fall back to the LOCALAPPDATA Git root');
+  const dyn = hook.indexOf('whereGitRoots');
+  const fallback = hook.indexOf('GIT_FALLBACK_ROOTS');
+  assert.ok(dyn !== -1 && fallback !== -1 && dyn < fallback, 'dynamic discovery must run before the fallback roots');
 });

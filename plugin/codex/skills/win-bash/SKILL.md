@@ -28,11 +28,14 @@ The `win-bash` PreToolUse hook classifies each `exec_command` and rewrites
   executables (`where`, `reg`, `ping`, `netstat`, `ipconfig`, `whoami`, ...),
   `cmd /c ...`, and any other command route to the Niubash Bash with the Git
   PATH prefix (append order), unless they explicitly need PowerShell.
-The standard Git Bash used for the PATH prefix is discovered dynamically (never
-hardcoded): `OMO_CODEX_GIT_BASH_PATH` env override, `bash.exe` on PATH under a
-Git root, the Git for Windows registry key, then `git.exe` on PATH. If no Git
-Bash is found, Niubash still runs the command without the PATH prefix; if no
-Niubash is installed, bash/POSIX commands fall back to the standard Git Bash.
+The standard Git Bash used for the PATH prefix is discovered dynamically:
+`OMO_CODEX_GIT_BASH_PATH` env override, `bash.exe` on PATH under a Git root,
+the Git for Windows registry key, then `git.exe` on PATH. As a last resort it
+checks the common install roots (`C:\Program Files\Git`,
+`C:\Program Files (x86)\Git`, `%LOCALAPPDATA%\Programs\Git`) so a Git that is
+installed but not on PATH is still found. If no Git Bash is found, Niubash
+still runs the command without the PATH prefix; if no Niubash is installed,
+bash/POSIX commands fall back to the standard Git Bash.
 
 The Niubash profile (`~/.niubashrc`) is also configured by `win-bash` to inherit
 the same Git Bash commands for interactive Niubash sessions (Git is discovered

@@ -44,14 +44,18 @@ to `C:\Windows\system32\tar.exe` (bsdtar) exactly as Niubash does natively
 with no injection; use `WIN_BASH_SHELL` to force Git Bash if GNU tar is
 required.
 
-`resolveGitBash()` is fully dynamic and never hardcodes an install root. It
-tries, in order: the `OMO_CODEX_GIT_BASH_PATH` env override, `bash.exe` found
-on PATH under a Git root (`<git>\bin\bash.exe`), the official Git for Windows
-registry key `HKLM\SOFTWARE\GitForWindows\InstallPath`, then roots derived
-from `git.exe` on PATH (`<git>/cmd/git.exe` or `<git>/bin/git.exe`). Every
-candidate is validated with `isFile()` and rejects any `winuxcmd\bin\bash.exe`
-Niubash candidate, so a Niubash-valued `OMO_CODEX_GIT_BASH_PATH` env override
-(which Niubash sets on this machine) cannot leak into the injected Git PATH.
+`resolveGitBash()` resolves dynamically first: the `OMO_CODEX_GIT_BASH_PATH`
+env override, `bash.exe` found on PATH under a Git root
+(`<git>\bin\bash.exe`), the official Git for Windows registry key
+`HKLM\SOFTWARE\GitForWindows\InstallPath`, then roots derived from `git.exe`
+on PATH (`<git>/cmd/git.exe` or `<git>/bin/git.exe`). Only when none of those
+find a Git Bash does it fall back to the common install roots
+(`C:\Program Files\Git`, `C:\Program Files (x86)\Git`,
+`%LOCALAPPDATA%\Programs\Git`), so a Git that is installed but not on PATH is
+still honored. Every candidate is validated with `isFile()` and rejects any
+`winuxcmd\bin\bash.exe` Niubash candidate, so a Niubash-valued
+`OMO_CODEX_GIT_BASH_PATH` env override (which Niubash sets on this machine)
+cannot leak into the injected Git PATH.
 
 Injection behavior depends on whether a standard Git Bash is found:
 

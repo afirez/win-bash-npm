@@ -319,10 +319,19 @@ function whereGitRoots() {
   }
 }
 
-// Resolve the standard Git Bash, never Niubash. Fully dynamic: env override,
-// bash.exe on PATH under a Git root, the official Git for Windows registry
-// install path, then git.exe on PATH (root derived). No install roots are
-// hardcoded.
+// Common Git for Windows install roots, used only as a last-resort fallback
+// when no Git Bash is found dynamically (PATH/registry/git.exe). A Git that is
+// installed but not on PATH (Start Menu / portable) is still honored.
+const GIT_FALLBACK_ROOTS = [
+  String.raw`C:\Program Files\Git`,
+  String.raw`C:\Program Files (x86)\Git`,
+  LOCAL_APP_DATA ? path.join(LOCAL_APP_DATA, 'Programs', 'Git') : '',
+].filter(Boolean);
+
+// Resolve the standard Git Bash, never Niubash. Dynamic sources first: env
+// override, bash.exe on PATH under a Git root, the official Git for Windows
+// registry install path, then git.exe on PATH (root derived). Only when none
+// of those find a Git Bash do we check the common install roots.
 function resolveGitBash() {
   const candidates = [];
   if (process.env.OMO_CODEX_GIT_BASH_PATH) candidates.push(process.env.OMO_CODEX_GIT_BASH_PATH);
@@ -330,6 +339,7 @@ function resolveGitBash() {
   const registryRoot = gitRegistryInstallPath();
   if (registryRoot) candidates.push(path.join(registryRoot, 'bin', 'bash.exe'));
   candidates.push(...whereGitRoots().map((root) => path.join(root, 'bin', 'bash.exe')));
+  candidates.push(...GIT_FALLBACK_ROOTS.map((root) => path.join(root, 'bin', 'bash.exe')));
   for (const candidate of candidates) {
     if (candidate && isFile(candidate) && !/winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(candidate)) return candidate;
   }
