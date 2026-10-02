@@ -89,7 +89,19 @@ Niubash is installed under `D:\apps\Niubash` when the `D:` drive exists, otherwi
 
 The CLI copies the bundled Codex plugin into a local marketplace, registers it with `codex plugin add`, and runs the plugin installer to resolve or install Niubash Bash.
 
-The PreToolUse hook is intentionally silent: it only writes `updatedInput.shell`. It must never add `additionalContext`, because that can corrupt parallel tool-call message chains.
+The PreToolUse hook routes each `exec_command` to the right shell instead of forcing Niubash everywhere:
+
+- POSIX commands, shell scripts, and piped/chained commands (`grep`, `sed`, `awk`, `find`, `git`, `bash x.sh`, `./x.sh`, `| && || \$(...)`) run in the **standard Git Bash** (`C:\Program Files\Git\bin\bash.exe` by default, or `OMO_CODEX_GIT_BASH_PATH`).
+- Windows-native operations (`psmux`, `tmux`, `powershell`, `pwsh`, PowerShell cmdlets, `cmd` builtins) are **left on the host PowerShell**.
+- Ambiguous / cross-platform commands (`node`, `npm`, ...) are not rewritten.
+- Niubash Bash is used only when explicitly requested via the `WIN_BASH_SHELL=<path>` escape hatch or an explicit `shell`.
+
+Per-command escape hatches (the hook strips the marker before running the command):
+
+- `WIN_BASH_SKIP=1 <cmd>` - never rewrite the shell for this command.
+- `WIN_BASH_SHELL=<path> <cmd>` - force this shell (quote the path if it has spaces).
+
+The hook is intentionally silent: it only writes `updatedInput.shell`. It must never add `additionalContext`, because that can corrupt parallel tool-call message chains.
 
 ## Claude Code
 

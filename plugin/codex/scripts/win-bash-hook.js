@@ -163,6 +163,122 @@ function configure() {
   return { ok: true, shell, config: CONFIG_PATH, rc: RC_PATH, rc_result: rcResult };
 }
 
+// ---- command routing -------------------------------------------------------
+
+// Any occurrence of these Windows-native programs keeps the host PowerShell:
+// psmux/pmux/tmux must never run inside a Bash environment (they mis-detect a
+// Unix-like host and emit POSIX commands that break pwsh panes).
+const WINDOWS_NATIVE_WORDS = ['psmux', 'pmux', 'tmux', 'powershell', 'pwsh'];
+
+// First-token Windows commands that should stay on the host PowerShell.
+const WINDOWS_FIRST_TOKENS = new Set([
+  'where', 'dir', 'cls', 'copy', 'del', 'ren', 'move', 'md', 'rd',
+  'attrib', 'chkdsk', 'diskpart', 'wmic', 'ping', 'tracert', 'nslookup',
+  'systeminfo', 'tree', 'robocopy', 'xcopy', 'tasklist', 'taskkill',
+  'schtasks', 'reg', 'regedit', 'netstat', 'ipconfig', 'whoami',
+  'start', 'msbuild', 'devenv',
+]);
+
+// First-token commands that need Bash/POSIX semantics and therefore route to
+// the standard Git Bash. Niubash is never the routing default.
+const POSIX_FIRST_TOKENS = new Set([
+  'bash', 'sh', 'zsh', 'dash', 'ash', 'ksh',
+  'grep', 'egrep', 'fgrep', 'rg', 'sed', 'awk', 'perl',
+  'find', 'xargs', 'ls', 'cat', 'tac', 'head', 'tail', 'tee', 'tr', 'cut',
+  'sort', 'uniq', 'wc', 'diff', 'patch', 'tar', 'gzip', 'gunzip', 'bzip2',
+  'xz', 'zip', 'unzip', 'less', 'more', 'nl', 'od', 'paste', 'join', 'comm',
+  'fold', 'fmt', 'expand', 'unexpand', 'split', 'csplit',
+  'touch', 'chmod', 'chown', 'chgrp', 'ln', 'readlink', 'realpath',
+  'basename', 'dirname', 'stat', 'du', 'df', 'ps', 'kill', 'pkill',
+  'killall', 'top', 'free', 'uptime', 'uname', 'who', 'id', 'groups',
+  'env', 'export', 'source', 'pwd', 'echo', 'printf', 'yes', 'true',
+  'false', 'sleep', 'seq', 'expr', 'test', '[', 'which', 'cd', 'mkdir',
+  'rmdir', 'cp', 'mv', 'rm', 'clear', 'history', 'date', 'cal', 'nproc',
+  'curl', 'wget', 'openssl', 'ssh', 'scp', 'rsync',
+  'make', 'cmake', 'ninja', 'git',
+]);
+
+function firstToken(cmd) {
+  const match = String(cmd).trim().match(/^(\S+)/);
+  return match ? match[1].toLowerCase().replace(/\.exe$/, '') : '';
+}
+
+function hasWindowsNativeWord(cmd) {
+  const lower = String(cmd).toLowerCase();
+  return WINDOWS_NATIVE_WORDS.some((word) => {
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^a-z0-9])${escaped}(\\.exe)?($|[^a-z0-9])`).test(lower);
+  });
+}
+
+// Classify a command as needing Bash ('bash') or staying on the host shell
+// ('none'). Windows-native checks run first so piped PowerShell/tmux commands
+// are never dragged into Bash.
+function classify(cmd) {
+  if (typeof cmd !== 'string' || !cmd.trim()) return 'none';
+  const lower = cmd.toLowerCase();
+  if (hasWindowsNativeWord(cmd)) return 'none';
+  const ft = firstToken(cmd);
+  if (/^[a-z]+-[a-z0-9]+$/.test(ft)) return 'none'; // PowerShell Verb-Noun cmdlet
+  if (WINDOWS_FIRST_TOKENS.has(ft)) return 'none';
+  if (POSIX_FIRST_TOKENS.has(ft)) return 'bash';
+  if (ft === '.' || ft.startsWith('./') || ft.startsWith('../') || ft.endsWith('.sh')) return 'bash';
+  if (/(\||&&|\$\(|\$\{|`|>>|>|\#\!)/.test(lower)) return 'bash';
+  return 'none';
+}
+
+// Per-command escape hatches, parsed from a leading token and stripped before
+// the command reaches the shell: WIN_BASH_SKIP=1 (never rewrite) and
+// WIN_BASH_SHELL=<path> (force this shell, quote the path if it has spaces).
+function parseEscapeHatches(cmd) {
+  if (typeof cmd !== 'string') return { skip: false, force: null, cmd: '' };
+  const trimmed = String(cmd).trimStart();
+  if (!trimmed) return { skip: false, force: null, cmd: '' };
+  const skipMatch = trimmed.match(/^WIN_BASH_SKIP=1([\s\S]*)$/);
+  if (skipMatch) return { skip: true, force: null, cmd: skipMatch[1].trimStart() };
+  const forceMatch = trimmed.match(/^WIN_BASH_SHELL=("(?:[^"]*)"|'[^']*'|\S+)([\s\S]*)$/);
+  if (forceMatch) {
+    let value = forceMatch[1];
+    if (value.length >= 2 && value[0] === '"' && value[value.length - 1] === '"') value = value.slice(1, -1);
+    if (value.length >= 2 && value[0] === "'" && value[value.length - 1] === "'") value = value.slice(1, -1);
+    return { skip: false, force: value, cmd: forceMatch[2].trimStart() };
+  }
+  return { skip: false, force: null, cmd };
+}
+
+// Resolve the standard Git Bash, never Niubash. Candidate order: env override,
+// common install roots, then PATH entries that end in /Git/bin/bash.exe.
+function resolveGitBash() {
+  const candidates = [];
+  if (process.env.OMO_CODEX_GIT_BASH_PATH) candidates.push(process.env.OMO_CODEX_GIT_BASH_PATH);
+  candidates.push(
+    String.raw`C:\Program Files\Git\bin\bash.exe`,
+    String.raw`C:\Program Files (x86)\Git\bin\bash.exe`,
+    LOCAL_APP_DATA ? path.join(LOCAL_APP_DATA, 'Programs', 'Git', 'bin', 'bash.exe') : '',
+  );
+  candidates.push(...whereBash().filter((value) => /git[\\/]bin[\\/]bash\.exe$/i.test(value)));
+  for (const candidate of candidates) {
+    if (candidate && isFile(candidate) && !/winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(candidate)) return candidate;
+  }
+  return null;
+}
+
+// Decide what the PreToolUse hook should do for one exec_command input.
+// Returns { action: 'skip'|'force'|'respect'|'bash'|'none', shell, cmd } where
+// shell is the shell to inject (or null) and cmd is the marker-stripped command.
+function decide(input) {
+  const original = typeof input.cmd === 'string' ? input.cmd : '';
+  const markers = parseEscapeHatches(original);
+  if (markers.skip) return { action: 'skip', shell: null, cmd: markers.cmd };
+  if (markers.force) return { action: 'force', shell: isFile(markers.force) ? markers.force : null, cmd: markers.cmd };
+  if (input.shell) return { action: 'respect', shell: null, cmd: original };
+  if (classify(markers.cmd) === 'bash') {
+    const gitBash = resolveGitBash();
+    return { action: gitBash ? 'bash' : 'none', shell: gitBash, cmd: markers.cmd };
+  }
+  return { action: 'none', shell: null, cmd: markers.cmd };
+}
+
 async function main() {
   const mode = process.argv[2] || 'pre-tool-use';
 
@@ -188,6 +304,14 @@ async function main() {
   const raw = await readStdin();
   if (!raw.trim()) return;
 
+  if (mode === 'route') {
+    let payload;
+    try { payload = JSON.parse(raw); } catch (_) { payload = {}; }
+    const input = payload && payload.tool_input ? payload.tool_input : payload;
+    process.stdout.write(JSON.stringify(decide(input || {})) + '\n');
+    return;
+  }
+
   if (mode === 'session-start') {
     const result = configure();
     if (result.ok) return;
@@ -206,17 +330,18 @@ async function main() {
   const input = parseToolInput(payload);
   if (!input) return;
 
-  const shell = resolveBash();
-  if (!shell) {
-    return;
-  }
-  if (normalizeShell(input.shell) === normalizeShell(shell)) return;
+  const decision = decide(input);
+  const updated = { ...input, cmd: decision.cmd };
+  if (decision.shell) updated.shell = decision.shell;
+  const shellChanged = Boolean(decision.shell) && normalizeShell(decision.shell) !== normalizeShell(input.shell || '');
+  const cmdChanged = decision.cmd !== input.cmd;
+  if (!shellChanged && !cmdChanged) return;
 
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'allow',
-      updatedInput: { ...input, shell },
+      updatedInput: updated,
     },
   }) + '\n');
 }
