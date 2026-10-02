@@ -44,17 +44,33 @@ to `C:\Windows\system32\tar.exe` (bsdtar) exactly as Niubash does natively
 with no injection; use `WIN_BASH_SHELL` to force Git Bash if GNU tar is
 required.
 
-When no Niubash is installed, bash/POSIX commands fall back to the standard Git
-Bash (no PATH prefix needed — Git Bash already has its own tools).
+`resolveGitBash()` is fully dynamic and never hardcodes an install root. It
+tries, in order: the `OMO_CODEX_GIT_BASH_PATH` env override, `bash.exe` found
+on PATH under a Git root (`<git>\bin\bash.exe`), the official Git for Windows
+registry key `HKLM\SOFTWARE\GitForWindows\InstallPath`, then roots derived
+from `git.exe` on PATH (`<git>/cmd/git.exe` or `<git>/bin/git.exe`). Every
+candidate is validated with `isFile()` and rejects any `winuxcmd\bin\bash.exe`
+Niubash candidate, so a Niubash-valued `OMO_CODEX_GIT_BASH_PATH` env override
+(which Niubash sets on this machine) cannot leak into the injected Git PATH.
 
-`resolveGitBash()` rejects any `winuxcmd\bin\bash.exe` candidate, so a
-Niubash-valued `OMO_CODEX_GIT_BASH_PATH` env override (which Niubash sets on
-this machine) cannot leak into the injected Git PATH.
+Injection behavior depends on whether a standard Git Bash is found:
+
+- Git Bash found -> every Niubash-routed command gets
+  `shell = <Niubash Bash>` and `cmd = export PATH="$PATH:<git dirs>"; <cmd>`.
+- Git Bash NOT found (Git for Windows not installed / not on PATH) -> Niubash
+  still runs the command with no PATH prefix (`cmd` unchanged). Niubash then
+  uses only its own tools; `awk`/`gzip`/`perl` are simply unavailable unless
+  Niubash ships them. The hook never fails a command because Git is missing.
+- No Niubash installed at all -> bash/POSIX commands fall back to the standard
+  Git Bash (no PATH prefix needed — Git Bash already has its own tools).
 
 The Niubash profile (`~/.niubashrc`) is also configured by win-bash: a
-Git-inherit block is written on first create and idempotently appended to an
-existing rc, so interactive `niu.exe` sessions get the same Git command
-inheritance. User rc content is preserved.
+Git-inherit block (v2 marker `win-bash-git-inherit-v2`) is written on first
+create and idempotently appended/upgraded on an existing rc. The block
+discovers Git dynamically inside Niubash via `command -v git.exe` (derives the
+root two levels up, normalizes the drive letter, and probes `usr/bin/awk.exe`)
+instead of scanning hardcoded install dirs, so interactive `niu.exe` sessions
+get the same Git command inheritance. User rc content is preserved.
 
 `session-start`/`configure`/`doctor` still resolve Niubash (install/config
 contract). The hook never emits `additionalContext` in PreToolUse.

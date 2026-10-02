@@ -316,4 +316,17 @@ test('hook DEFAULT_RC lets Niubash inherit standard Git Bash commands', () => {
   assert.ok(hook.includes('__wb_git_root'), 'rc must self-detect a Git for Windows install');
   assert.ok(hook.includes('usr/bin/awk.exe'), 'rc must probe for a Git command (awk)');
   assert.ok(hook.includes('export PATH="'), 'rc must prepend the Git dirs onto PATH');
+  assert.ok(hook.includes('win-bash-git-inherit-v2'), 'rc must carry the v2 dynamic-discovery marker');
+  assert.ok(hook.includes('command -v git.exe'), 'rc must discover Git dynamically from PATH');
+  assert.equal(hook.includes('PROGRAMFILES/Git'), false, 'rc must not hardcode a Git install root');
+});
+
+test('hook resolves Git Bash dynamically and never hardcodes install roots', () => {
+  const hook = fs.readFileSync(path.join(getBundledPluginRoot(), 'scripts', 'win-bash-hook.js'), 'utf8');
+  assert.ok(hook.includes('gitRegistryInstallPath'), 'hook must read the GitForWindows registry install path');
+  assert.ok(hook.includes('whereGitRoots'), 'hook must derive Git roots from git.exe on PATH');
+  assert.ok(hook.includes("whereBash().filter((value) => /git"), 'hook must find Git bash.exe on PATH dynamically');
+  assert.equal(hook.includes(String.raw`C:\Program Files\Gitinash.exe`), false, 'hook must not hardcode the Git bin path');
+  assert.equal(hook.includes('Program Files (x86)'), false, 'hook must not hardcode the 32-bit Git root');
+  assert.equal(hook.includes("'Programs', 'Git'"), false, 'hook must not hardcode a LOCALAPPDATA Git root');
 });

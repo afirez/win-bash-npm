@@ -20,22 +20,28 @@ const CANDIDATES = [
 
 const GIT_INHERIT_RC = [
   '# win-bash: inherit standard Git Bash commands (awk/gzip/perl/tar/sed/...)',
-  '# so Niubash has a complete POSIX toolset when Git for Windows is installed.',
+  '# win-bash-git-inherit-v2: discover Git dynamically from git on PATH (no hardcoded roots).',
   '__wb_git_root=""',
-  "for __wb_cand in \"$PROGRAMFILES/Git\" \"${PROGRAMFILES(x86)}/Git\" \"$LOCALAPPDATA/Programs/Git\" \"/c/Program Files/Git\"; do",
-  "  if [ -n \"$__wb_cand\" ] && [ -f \"$__wb_cand/usr/bin/awk.exe\" ]; then",
-  "    __wb_git_root=\"$__wb_cand\"",
-  "    break",
-  "  fi",
-  "done",
-  "if [ -n \"$__wb_git_root\" ]; then",
-  "  __wb_git_root=\"${__wb_git_root//\\\\//}\"",
-  "  case \":$PATH:\" in",
-  "    *\":$__wb_git_root/usr/bin:\"*) ;;",
-  "    *) export PATH=\"$__wb_git_root/usr/bin:$__wb_git_root/bin:$__wb_git_root/cmd:$PATH\" ;;",
-  "  esac",
-  "fi",
-  "unset __wb_cand __wb_git_root",
+  '__wb_git="$(command -v git.exe 2>/dev/null || command -v git 2>/dev/null || true)"',
+  'if [ -n "$__wb_git" ]; then',
+  '  __wb_root="$(dirname "$(dirname "$__wb_git")")"',
+  '  case "$__wb_root" in',
+  "    [A-Za-z]:*) __wb_root=\"/$(printf %s \"${__wb_root:0:1}\" | tr 'A-Z' 'a-z')/${__wb_root#*:}\" ;;",
+  '  esac',
+  '  case "$__wb_root" in',
+  "    *\\\\*) __wb_root=\"$(printf '%s' \"$__wb_root\" | tr '\\\\' '/')\" ;;",
+  '  esac',
+  '  if [ -f "$__wb_root/usr/bin/awk.exe" ]; then',
+  '    __wb_git_root="$__wb_root"',
+  '  fi',
+  'fi',
+  'if [ -n "$__wb_git_root" ]; then',
+  '  case ":$PATH:" in',
+  '    *":$__wb_git_root/usr/bin:"*) ;;',
+  '    *) export PATH="$__wb_git_root/usr/bin:$__wb_git_root/bin:$__wb_git_root/cmd:$PATH" ;;',
+  '  esac',
+  'fi',
+  'unset __wb_git_root __wb_root __wb_git',
 ].join('\n');
 
 const DEFAULT_RC = [
@@ -124,10 +130,10 @@ function writeConfig(shell) {
 function ensureDefaultRc() {
   if (fs.existsSync(RC_PATH)) {
     const existing = fs.readFileSync(RC_PATH, 'utf8');
-    if (existing.includes('__wb_git_root')) return { created: false, reason: 'exists' };
+    if (existing.includes('win-bash-git-inherit-v2')) return { created: false, reason: 'exists' };
     const block = existing.endsWith('\n') ? GIT_INHERIT_RC : `\n${GIT_INHERIT_RC}`;
     fs.appendFileSync(RC_PATH, `${block}\n`, 'utf8');
-    return { created: false, reason: 'git-inherit-appended' };
+    return { created: false, reason: existing.includes('__wb_git_root') ? 'git-inherit-upgraded' : 'git-inherit-appended' };
   }
   if (fs.existsSync(LEGACY_RC_PATH)) return { created: false, reason: 'legacy-exists' };
   fs.writeFileSync(RC_PATH, DEFAULT_RC, 'utf8');
@@ -285,17 +291,45 @@ function parseEscapeHatches(cmd) {
   return { skip: false, force: null, cmd };
 }
 
-// Resolve the standard Git Bash, never Niubash. Candidate order: env override,
-// common install roots, then PATH entries that end in /Git/bin/bash.exe.
+// Official Git for Windows install root from the registry (dynamic, no
+// hardcoded install paths).
+function gitRegistryInstallPath() {
+  try {
+    const out = execFileSync('reg.exe', ['query', 'HKLM\\SOFTWARE\\GitForWindows', '/v', 'InstallPath'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const match = String(out).match(/InstallPath\s+REG_SZ\s+(.+)/i);
+    return match ? match[1].trim() : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+// Derive candidate Git roots from git.exe on PATH (git.exe lives at
+// <root>/cmd/git.exe or <root>/bin/git.exe). Dynamic, no hardcoded roots.
+function whereGitRoots() {
+  try {
+    const out = execFileSync('where.exe', ['git.exe'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const roots = [];
+    for (const line of String(out).split(/\r?\n/)) {
+      const match = line.trim().match(/^(.*)[\\/](?:cmd|bin)[\\/]git\.exe$/i);
+      if (match) roots.push(match[1]);
+    }
+    return roots;
+  } catch (_) {
+    return [];
+  }
+}
+
+// Resolve the standard Git Bash, never Niubash. Fully dynamic: env override,
+// bash.exe on PATH under a Git root, the official Git for Windows registry
+// install path, then git.exe on PATH (root derived). No install roots are
+// hardcoded.
 function resolveGitBash() {
   const candidates = [];
   if (process.env.OMO_CODEX_GIT_BASH_PATH) candidates.push(process.env.OMO_CODEX_GIT_BASH_PATH);
-  candidates.push(
-    String.raw`C:\Program Files\Git\bin\bash.exe`,
-    String.raw`C:\Program Files (x86)\Git\bin\bash.exe`,
-    LOCAL_APP_DATA ? path.join(LOCAL_APP_DATA, 'Programs', 'Git', 'bin', 'bash.exe') : '',
-  );
   candidates.push(...whereBash().filter((value) => /git[\\/]bin[\\/]bash\.exe$/i.test(value)));
+  const registryRoot = gitRegistryInstallPath();
+  if (registryRoot) candidates.push(path.join(registryRoot, 'bin', 'bash.exe'));
+  candidates.push(...whereGitRoots().map((root) => path.join(root, 'bin', 'bash.exe')));
   for (const candidate of candidates) {
     if (candidate && isFile(candidate) && !/winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(candidate)) return candidate;
   }
