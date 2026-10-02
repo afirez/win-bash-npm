@@ -311,6 +311,41 @@ test('route: Niubash PATH prefix appends Git dirs so inner bash stays Niubash', 
   }
 });
 
+test('hook uses PowerShell 7 (pwsh) as the last-resort fallback shell', () => {
+  const hook = fs.readFileSync(path.join(getBundledPluginRoot(), 'scripts', 'win-bash-hook.js'), 'utf8');
+  assert.ok(hook.includes('resolvePwsh'), 'hook must resolve pwsh');
+  assert.ok(hook.includes("where.exe', ['pwsh.exe']"), 'hook must resolve pwsh dynamically via where.exe');
+  assert.ok(hook.includes(String.raw`C:\Program Files\PowerShell\7\pwsh.exe`), 'hook must fall back to the Program Files pwsh root');
+  const gitIdx = hook.indexOf('const gitBash = resolveGitBash();');
+  const pwshIdx = hook.indexOf('const pwsh = resolvePwsh();');
+  assert.ok(gitIdx !== -1 && pwshIdx !== -1 && gitIdx < pwshIdx, 'pwsh must be the final fallback after Git Bash in decide()');
+});
+
+test('hook configure reports Niubash, Git Bash and pwsh resolution', () => {
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-cfg-'));
+  const fakeBash = path.join(fakeHome, 'bash.exe');
+  fs.writeFileSync(fakeBash, '');
+  try {
+    const out = execFileSync(process.execPath, [HOOK, 'configure'], {
+      encoding: 'utf8',
+      env: { ...process.env, USERPROFILE: fakeHome, WIN_BASH_PATH: fakeBash },
+    });
+    const result = JSON.parse(out);
+    assert.ok('git_bash' in result, 'configure must report git_bash');
+    assert.ok('pwsh' in result, 'configure must report pwsh');
+  } finally {
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('hook session-start carries install prompts for missing Git Bash / pwsh', () => {
+  const hook = fs.readFileSync(path.join(getBundledPluginRoot(), 'scripts', 'win-bash-hook.js'), 'utf8');
+  assert.ok(hook.includes('https://git-scm.com/downloads'), 'session-start must point to the Git for Windows install');
+  assert.ok(hook.includes('winget install Microsoft.PowerShell'), 'session-start must point to the PowerShell 7 install');
+  assert.ok(hook.includes('the last-resort fallback shell'), 'session-start must describe pwsh as the last-resort fallback');
+  assert.ok(hook.includes("emitContext('SessionStart', warnings.join"), 'session-start must emit install warnings only via SessionStart');
+});
+
 test('hook DEFAULT_RC lets Niubash inherit standard Git Bash commands', () => {
   const hook = fs.readFileSync(path.join(getBundledPluginRoot(), 'scripts', 'win-bash-hook.js'), 'utf8');
   assert.ok(hook.includes('__wb_git_root'), 'rc must self-detect a Git for Windows install');

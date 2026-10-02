@@ -100,8 +100,10 @@ The PreToolUse hook routes each `exec_command` to the right shell:
   `bash`/`sed`/`grep`/`find` stay primary and an inner `bash` still resolves
   to Niubash. The standard Git Bash is discovered dynamically (env override,
   `bash.exe`/`git.exe` on PATH, Git for Windows registry), with the common
-  install roots as a last-resort fallback when nothing dynamic matches. When
-  no Niubash is installed, these fall back to the standard Git Bash.
+  install roots as a last-resort fallback when nothing dynamic matches, and
+  PowerShell 7 (`pwsh`) is the final fallback shell when neither Niubash nor
+  Git Bash exists. Missing Git for Windows / pwsh triggers a one-time install
+  prompt at session start.
 - Windows-native operations that genuinely need a Windows shell are **left on
   the host PowerShell**: `psmux`/`pmux`/`tmux`, `powershell`/`pwsh` when RUN as
   a command, PowerShell Verb-Noun cmdlets (`Get-Content`, `Select-String`),

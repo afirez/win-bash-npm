@@ -57,16 +57,27 @@ still honored. Every candidate is validated with `isFile()` and rejects any
 `OMO_CODEX_GIT_BASH_PATH` env override (which Niubash sets on this machine)
 cannot leak into the injected Git PATH.
 
-Injection behavior depends on whether a standard Git Bash is found:
+Injection behavior depends on what shells are available:
 
-- Git Bash found -> every Niubash-routed command gets
-  `shell = <Niubash Bash>` and `cmd = export PATH="$PATH:<git dirs>"; <cmd>`.
-- Git Bash NOT found (Git for Windows not installed / not on PATH) -> Niubash
-  still runs the command with no PATH prefix (`cmd` unchanged). Niubash then
-  uses only its own tools; `awk`/`gzip`/`perl` are simply unavailable unless
-  Niubash ships them. The hook never fails a command because Git is missing.
-- No Niubash installed at all -> bash/POSIX commands fall back to the standard
+- Niubash found -> every Niubash-routed command gets
+  `shell = <Niubash Bash>` and `cmd = export PATH="$PATH:<git dirs>"; <cmd>`
+  when Git Bash is also found, or `cmd` unchanged (no PATH prefix) when Git
+  Bash is missing (Niubash then uses only its own tools; `awk`/`gzip`/`perl`
+  are unavailable unless Niubash ships them). The hook never fails a command
+  because Git is missing.
+- No Niubash, Git Bash found -> bash/POSIX commands fall back to the standard
   Git Bash (no PATH prefix needed — Git Bash already has its own tools).
+- No Niubash and no Git Bash -> PowerShell 7 (`pwsh`) is the last-resort
+  fallback shell (resolved via `where.exe pwsh.exe`, which also returns the
+  Microsoft Store app-execution alias, then `C:\Program Files\PowerShell\7`).
+- No Niubash, no Git Bash, and no pwsh -> `action=none` (stays on the host
+  shell); nothing can route.
+
+Install prompts: `session-start` emits a one-time warning (the only safe
+injection point) whenever a fallback is missing - Git for Windows missing
+(so Niubash cannot inherit awk/gzip/perl/tar/sed) and, only when Niubash AND
+Git Bash AND pwsh are all missing, a PowerShell 7 install prompt. PreToolUse
+never injects context.
 
 The Niubash profile (`~/.niubashrc`) is also configured by win-bash: a
 Git-inherit block (v2 marker `win-bash-git-inherit-v2`) is written on first

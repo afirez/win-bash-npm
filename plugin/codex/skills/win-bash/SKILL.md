@@ -34,8 +34,12 @@ the Git for Windows registry key, then `git.exe` on PATH. As a last resort it
 checks the common install roots (`C:\Program Files\Git`,
 `C:\Program Files (x86)\Git`, `%LOCALAPPDATA%\Programs\Git`) so a Git that is
 installed but not on PATH is still found. If no Git Bash is found, Niubash
-still runs the command without the PATH prefix; if no Niubash is installed,
-bash/POSIX commands fall back to the standard Git Bash.
+still runs the command without the PATH prefix. If no Niubash is installed,
+bash/POSIX commands fall back to the standard Git Bash, then to PowerShell 7
+(`pwsh`) as the last-resort fallback shell. When a fallback is missing (Git
+for Windows, or all shells), the hook emits a one-time install prompt at
+session start (`https://git-scm.com/downloads`, `winget install
+Microsoft.PowerShell`); PreToolUse never injects context.
 
 The Niubash profile (`~/.niubashrc`) is also configured by `win-bash` to inherit
 the same Git Bash commands for interactive Niubash sessions (Git is discovered

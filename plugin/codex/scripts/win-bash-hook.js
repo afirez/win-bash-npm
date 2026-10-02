@@ -194,10 +194,12 @@ function emitContext(eventName, context) {
 
 function configure() {
   const shell = resolveBash();
-  if (!shell) return { ok: false, shell: null, config: CONFIG_PATH, rc: RC_PATH, rc_result: null };
+  const gitBash = resolveGitBash();
+  const pwsh = resolvePwsh();
+  if (!shell) return { ok: false, shell: null, git_bash: gitBash, pwsh, config: CONFIG_PATH, rc: RC_PATH, rc_result: null };
   writeConfig(shell);
   const rcResult = ensureDefaultRc();
-  return { ok: true, shell, config: CONFIG_PATH, rc: RC_PATH, rc_result: rcResult };
+  return { ok: true, shell, git_bash: gitBash, pwsh, config: CONFIG_PATH, rc: RC_PATH, rc_result: rcResult };
 }
 
 // ---- command routing -------------------------------------------------------
@@ -346,6 +348,22 @@ function resolveGitBash() {
   return null;
 }
 
+// PowerShell 7 (pwsh) is the last-resort fallback shell when neither Niubash
+// nor Git Bash is available. Resolved dynamically via `where.exe pwsh.exe`,
+// which also returns the runnable Microsoft Store app-execution alias (a
+// reparse point that isFile() cannot read, so where.exe's resolution is
+// trusted directly). Falls back to the standard Program Files install root.
+// Never Windows PowerShell 5.1 (powershell.exe).
+function resolvePwsh() {
+  try {
+    const out = execFileSync('where.exe', ['pwsh.exe'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const fromWhere = String(out).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (fromWhere.length) return fromWhere[0];
+  } catch (_) {}
+  const fallback = String.raw`C:\Program Files\PowerShell\7\pwsh.exe`;
+  return isFile(fallback) ? fallback : null;
+}
+
 // Convert a Windows path (C:\\Program Files\\Git\\usr\\bin) into the MSYS/POSIX
 // form Niubash accepts in PATH (/c/Program Files/Git/usr/bin).
 function toPosixPath(value) {
@@ -366,12 +384,13 @@ function buildGitPathPrefix() {
 }
 
 // Decide what the PreToolUse hook should do for one exec_command input.
-// Returns { action: 'skip'|'force'|'respect'|'niubash'|'bash'|'none', shell, cmd }
-// where shell is the shell to inject (or null) and cmd is the final command.
-// Plan B: bash/POSIX/script commands route to the Niubash Bash with a leading
-// `export PATH="<git dirs>:$PATH"; ` so Niubash inherits standard Git Bash
-// commands (awk/gzip/perl/tar/sed/...). Git Bash is only the fallback when no
-// Niubash is installed.
+// Returns { action: 'skip'|'force'|'respect'|'niubash'|'bash'|'pwsh'|'none',
+// shell, cmd } where shell is the shell to inject (or null) and cmd is the
+// final command. Plan B: bash/POSIX/script commands route to the Niubash Bash
+// with a leading `export PATH="<git dirs>:$PATH"; ` so Niubash inherits
+// standard Git Bash commands (awk/gzip/perl/tar/sed/...). When no Niubash is
+// installed, Git Bash is the fallback, then PowerShell 7 (pwsh) as the
+// last-resort fallback.
 function decide(input) {
   const original = typeof input.cmd === 'string' ? input.cmd : '';
   const markers = parseEscapeHatches(original);
@@ -386,7 +405,10 @@ function decide(input) {
       return { action: 'niubash', shell: niubash, cmd: prefix ? prefix + markers.cmd : markers.cmd };
     }
     const gitBash = resolveGitBash();
-    return { action: gitBash ? 'bash' : 'none', shell: gitBash, cmd: markers.cmd };
+    if (gitBash) return { action: 'bash', shell: gitBash, cmd: markers.cmd };
+    const pwsh = resolvePwsh();
+    if (pwsh) return { action: 'pwsh', shell: pwsh, cmd: markers.cmd };
+    return { action: 'none', shell: null, cmd: markers.cmd };
   }
   return { action: 'none', shell: null, cmd: markers.cmd };
 }
@@ -426,8 +448,17 @@ async function main() {
 
   if (mode === 'session-start') {
     const result = configure();
-    if (result.ok) return;
-    emitContext('SessionStart', `win-bash is installed but no Bash executable was found. Run the win-bash install.ps1 with -InstallerPath, -DownloadUrl, or set WIN_BASH_PATH. Config: ${CONFIG_PATH}`);
+    const warnings = [];
+    if (!result.ok) {
+      warnings.push(`win-bash could not find a Niubash Bash, so shell commands cannot route to it. Install Niubash (run "win-bash bash install") or set WIN_BASH_PATH. Config: ${CONFIG_PATH}`);
+    }
+    if (!resolveGitBash()) {
+      warnings.push('win-bash routes shell work to the Niubash Bash, but no Git for Windows (Git Bash) was found, so Niubash cannot inherit awk/gzip/perl/tar/sed. Install Git for Windows from https://git-scm.com/downloads and restart the session; the hook picks it up automatically.');
+    }
+    if (!result.ok && !resolveGitBash() && !resolvePwsh()) {
+      warnings.push('win-bash found neither Niubash, Git Bash, nor PowerShell 7 (pwsh), the last-resort fallback shell. Install PowerShell 7 with "winget install Microsoft.PowerShell" or from https://github.com/PowerShell/PowerShell/releases, then restart the session.');
+    }
+    if (warnings.length) emitContext('SessionStart', warnings.join('\n'));
     return;
   }
 
