@@ -32,7 +32,7 @@ function toPosixPath(value) {
 function gitPathPrefix(gitBash) {
   const root = toPosixPath(path.dirname(path.dirname(gitBash)));
   const dirs = [`${root}/usr/bin`, `${root}/bin`, `${root}/cmd`];
-  return `export PATH="${dirs.join(':')}:$PATH"; `;
+  return `export PATH="$PATH:${dirs.join(':')}"; `;
 }
 
 test('bundled Codex plugin version is fixed', () => {
@@ -227,6 +227,24 @@ test('route: bash running a .sh script or using awk routes to Niubash, inheritin
       assert.equal(r.shell, niubash, cmd);
       assert.equal(r.cmd, gitPathPrefix(gitBash) + cmd, cmd);
     }
+  } finally {
+    fs.rmSync(niubash, { force: true });
+    fs.rmSync(gitBash, { force: true });
+  }
+});
+
+test('route: Niubash PATH prefix appends Git dirs so inner bash stays Niubash', () => {
+  const niubash = fakeBashFile('niu');
+  const gitBash = fakeBashFile('git');
+  fs.writeFileSync(niubash, '');
+  fs.writeFileSync(gitBash, '');
+  try {
+    const r = runRoute({ cmd: 'bash script.sh' }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
+    assert.equal(r.action, 'niubash');
+    assert.equal(r.shell, niubash);
+    assert.ok(r.cmd.startsWith('export PATH="$PATH:'), 'Git dirs must be appended AFTER the existing PATH');
+    assert.ok(r.cmd.endsWith('"; bash script.sh'), 'original command must follow the PATH prefix');
+    assert.equal(r.cmd.includes('/usr/bin:'), true);
   } finally {
     fs.rmSync(niubash, { force: true });
     fs.rmSync(gitBash, { force: true });

@@ -21,15 +21,20 @@ Decision order:
 5. bash/POSIX (`bash`, `grep/sed/awk/find/ls/cat/cd/git/curl/...`, `./x.sh`,
    `sh x.sh`, `bash x.sh`, `source env.sh`, pipes/`&&`/`$(...)` operators) ->
    rewrite `shell` to the Niubash Bash via `resolveBash()` and prefix `cmd`
-   with `export PATH="<git dirs>:$PATH"; ` so Niubash inherits Git Bash
+   with `export PATH="$PATH:<git dirs>"; ` so Niubash inherits Git Bash
    commands.
 6. Everything else (e.g. `node`, `npm`) -> no rewrite.
 
 The Git dirs are derived from `resolveGitBash()` (standard Git Bash, never a
 `winuxcmd\bin\bash.exe` Niubash candidate): `<git>/usr/bin`, `<git>/bin`,
-`<git>/cmd`, in MSYS/POSIX form. Prepending Git dirs first is required so
-`awk/gzip/perl/tar/sed` resolve to the standard GNU tools (an appended order
-resolves `tar` to `C:\Windows\system32\tar.exe`, which is not GNU tar).
+`<git>/cmd`, in MSYS/POSIX form. Git dirs are appended AFTER the existing PATH
+(`$PATH:<git dirs>`) so Niubash's own `bash`/`sed`/`grep`/`find`/`sort` stay
+primary and an inner `bash` still resolves to Niubash (verified: with Git
+prepended, `bash` resolves to Git Bash 5.2 instead of Niubash 5.3). `awk`/
+`gzip`/`perl` (which Niubash lacks) resolve to the Git versions. `tar` resolves
+to `C:\Windows\system32\tar.exe` (bsdtar) exactly as Niubash does natively
+with no injection; use `WIN_BASH_SHELL` to force Git Bash if GNU tar is
+required.
 
 When no Niubash is installed, bash/POSIX commands fall back to the standard Git
 Bash (no PATH prefix needed — Git Bash already has its own tools).
@@ -70,7 +75,7 @@ the hook to load.
 - Real-machine `route` probes:
   - `grep foo`, `bash script.sh`, `bash -c 'echo hi | awk ...'`, `ls -la` ->
     `action=niubash`, `shell=F:\studio\apps\Niubash\winuxcmd\bin\bash.exe`,
-    `cmd=export PATH="/c/Program Files/Git/usr/bin:/c/Program Files/Git/bin:/c/Program Files/Git/cmd:$PATH"; <cmd>`
+    `cmd=export PATH="$PATH:/c/Program Files/Git/usr/bin:/c/Program Files/Git/bin:/c/Program Files/Git/cmd"; <cmd>`
   - `psmux ls`, `tmux ls`, `powershell -Command Get-Process`, `node --version` ->
     `action=none` (no rewrite)
 - End-to-end under Niubash with the injected prefix: `grep`/`awk`/`gzip|gunzip`/

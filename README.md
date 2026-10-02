@@ -94,10 +94,12 @@ The PreToolUse hook routes each `exec_command` to the right shell:
 - **bash/POSIX commands and shell scripts run in the Niubash Bash** (`bash`,
   `grep`, `sed`, `awk`, `find`, `git`, `./x.sh`, `sh x.sh`, `bash x.sh`,
   pipes, `&&`, `\$(...)`). The hook sets `shell = <Niubash Bash>` and prefixes
-  the command with `export PATH="<git dirs>:$PATH"; ` so Niubash inherits the
+  the command with `export PATH="$PATH:<git dirs>"; ` so Niubash inherits the
   standard Git Bash commands (`awk`/`gzip`/`perl`/`tar`/`sed`) it does not
-  ship with. When no Niubash is installed, these fall back to the standard Git
-  Bash.
+  ship with. Git dirs are appended after Niubash's PATH so Niubash's own
+  `bash`/`sed`/`grep`/`find` stay primary and an inner `bash` still resolves
+  to Niubash. When no Niubash is installed, these fall back to the standard
+  Git Bash.
 - Windows-native operations (`psmux`, `tmux`, `powershell`, `pwsh`, PowerShell
   cmdlets, `cmd` builtins) are **left on the host PowerShell**.
 - Ambiguous / cross-platform commands (`node`, `npm`, ...) are not rewritten.

@@ -16,8 +16,10 @@ The `win-bash` PreToolUse hook classifies each `exec_command` and rewrites
   scripts (`./x.sh`, `sh x.sh`, `bash x.sh`, `source env.sh`), and piped/chained
   commands (`|`, `&&`, `||`, `$(...)`, `>`). The hook sets
   `shell = <Niubash Bash>` and prefixes the command with
-  `export PATH="<git dirs>:$PATH"; ` so Niubash can run the standard Git Bash
-  tools it does not ship with.
+  `export PATH="$PATH:<git dirs>"; ` so Niubash can run the standard Git Bash
+  tools it does not ship with. Git dirs are appended AFTER the existing PATH so
+  Niubash's own `bash`/`sed`/`grep`/`find` stay primary and an inner `bash`
+  still resolves to Niubash.
 - **Windows-native -> keep PowerShell.** `psmux`, `pmux`, `tmux`, `powershell`,
   `pwsh`, PowerShell cmdlets (`Get-Content`, `Select-String`), and Windows
   commands (`where`, `dir`, `reg`, `netstat`, ...) are left untouched.
@@ -56,7 +58,7 @@ Niubash Bash executable:
 
 ```json
 {
-  "cmd": "export PATH=\"/c/Program Files/Git/usr/bin:/c/Program Files/Git/bin:/c/Program Files/Git/cmd:$PATH\"; pwd; printf 'bash=%s\\n' \"$BASH_VERSION\"",
+  "cmd": "export PATH=\"$PATH:/c/Program Files/Git/usr/bin:/c/Program Files/Git/bin:/c/Program Files/Git/cmd\"; pwd; printf 'bash=%s\\n' \"$BASH_VERSION\"",
   "workdir": "F:\\studio\\ai_agent\\UltraWorker",
   "shell": "F:\\studio\\apps\\Niubash\\winuxcmd\\bin\\bash.exe"
 }

@@ -312,7 +312,7 @@ function buildGitPathPrefix() {
   if (!gitBash) return '';
   const gitRoot = toPosixPath(path.dirname(path.dirname(gitBash)));
   const dirs = [`${gitRoot}/usr/bin`, `${gitRoot}/bin`, `${gitRoot}/cmd`];
-  return `export PATH="${dirs.join(':')}:$PATH"; `;
+  return `export PATH="$PATH:${dirs.join(':')}"; `;
 }
 
 // Decide what the PreToolUse hook should do for one exec_command input.
