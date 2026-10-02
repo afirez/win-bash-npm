@@ -43,3 +43,29 @@ contract). The hook never emits `additionalContext` in PreToolUse.
 `node bin/win-bash.js install --target codex` -> syncs plugin/codex into the
 local marketplace and re-caches `win-bash/0.1.4`. Session restart required for
 the hook to load.
+
+## Final evidence (2026-10-02)
+
+- `npm test`: 20/20 pass (added 10 route tests; existing config/claude/opencode/niubash tests untouched).
+- Real-machine `route` probes (repo + installed cache 0.1.4):
+  - `git log --oneline | head`, `pwd`, `grep foo`, `bash script.sh`, `./tools/sync.sh` -> `bash` `C:\Program Files\Git\bin\bash.exe`
+  - `psmux ls`, `tmux ls`, `powershell -Command Get-Process`, `Get-Content a.txt | Select-String x`, `node --version`, `npm test` -> `none` (no rewrite)
+- Full `PreToolUse` payloads (repo hook, same file as cache):
+  - POSIX `grep foo bar` -> `updatedInput.shell = C:\\Program Files\Git\bin\bash.exe`
+  - `psmux ls` -> no output (unchanged)
+  - `WIN_BASH_SKIP=1 psmux ls` -> strips marker, `cmd = psmux ls`, no shell
+  - explicit `shell` -> no output (respected)
+- `win-bash install --target codex` OK; cache `local-win-bash/win-bash/0.1.4` has the new hook (13.9kB), nested `package.json` (commonjs), routing SKILL.md; cache `route` works.
+- `win-bash doctor --target codex` OK (Niubash resolve/install contract intact).
+- Commit: `d1211ce fix(codex): route exec_command shells instead of forcing Niubash`.
+
+## Self-review
+
+Routing decision order is escape hatch -> respect explicit shell -> Windows-native
+-> POSIX Git Bash -> default none; psmux/tmux/powershell can never be dragged into
+Bash because the word check runs before operator detection. `resolveGitBash()`
+rejects `winuxcmd\bin\bash.exe` so a Niubash-valued `OMO_CODEX_GIT_BASH_PATH`
+(which Niubash sets on this machine) cannot hijack Git Bash. Niubash resolution
+kept only for session-start/configure/doctor. No `additionalContext` in
+PreToolUse. Session restart still required for the running Codex session to load
+the new hook.
