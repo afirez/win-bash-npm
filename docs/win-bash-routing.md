@@ -90,6 +90,19 @@ get the same Git command inheritance. User rc content is preserved.
 `session-start`/`configure`/`doctor` still resolve Niubash (install/config
 contract). The hook never emits `additionalContext` in PreToolUse.
 
+## Claude Code / OpenCode (static, hook-less fallback)
+
+Claude Code and OpenCode have no PreToolUse hook, so their shell is configured
+once at install time. `install --target claude` writes `CLAUDE_CODE_GIT_BASH_PATH`
+and `CLAUDE_CODE_SHELL` into `~/.claude/settings.json`; `install --target opencode`
+writes the `shell` key into `~/.config/opencode/opencode.json`. Both resolve the
+shell through the same shared chain (`resolveShellForInstall` in
+`src/niubash.js`): Niubash Bash first (installed if missing), then the standard
+Git Bash, then PowerShell 7 (`pwsh`) as the last resort. Unlike Codex there is no
+per-command routing and no install prompt; the resolved shell is written once and
+used for the platform's terminal/bash tools. Re-running the install after
+restoring Niubash switches the static config back.
+
 ## Acceptance mapping (real-machine)
 
 | # | Acceptance | Evidence |
@@ -108,7 +121,7 @@ the hook to load.
 
 ## Evidence (2026-10-03, Plan B)
 
-- `npm test`: 26/26 pass (Plan B routing: everything except psmux/tmux/
+- `npm test`: 35/35 pass (Plan B routing: everything except psmux/tmux/
   PowerShell cmdlets/cmd.exe builtins -> Niubash with Git PATH prefix; escape
   hatches + explicit-shell respect; rc Git-inherit block present).
 - Real-machine `route` probes:
@@ -120,6 +133,13 @@ the hook to load.
   - `node --version`, `npm test`, `where.exe bash.exe`, `reg query ...`,
     `ping -n 1 ...`, `netstat -ano`, `cmd /c echo x`, `grep tmux notes.md` ->
     `action=niubash` with Niubash shell + Git PATH prefix
+- Three-platform acceptance (2026-10-03): `install --target all` succeeded on
+  Codex (plugin 0.1.4 enabled), Claude Code (2.1.220) and OpenCode (1.18.34);
+  `doctor --target all` reported the Niubash shell with Git Bash and pwsh both
+  resolvable on all three; hook `route` confirmed `grep`/`./build.sh` -> Niubash
+  + Git PATH prefix, `tmux ls`/`Get-ChildItem` -> `none`, `WIN_BASH_SKIP=1` ->
+  skip; real execution through Niubash with the injected prefix ran
+  `awk`/`grep` correctly, Git Bash ran `awk`, and pwsh reported 7.6.6.
 - End-to-end under Niubash with the injected prefix: `grep`/`awk`/`gzip|gunzip`/
   `perl`/`sed` all resolve from Git and run correctly; `bash script.sh` runs with
   Git Bash tools inherited.
