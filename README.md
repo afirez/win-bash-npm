@@ -2,7 +2,7 @@
 
 Windows installer for the `win-bash` integration.
 
-- npm package version: `0.3.1`
+- npm package version: `0.4.0`
 - Codex support: `exec_command.shell` injection through the bundled plugin
 - Claude Code support: official `CLAUDE_CODE_GIT_BASH_PATH` / `CLAUDE_CODE_SHELL` settings plus a `win-bash` skill
 - OpenCode support: `shell` config key plus a `win-bash` skill
