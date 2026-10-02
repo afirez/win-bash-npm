@@ -104,7 +104,7 @@ test('route: shell scripts route to Niubash with a Git PATH prefix', () => {
   }
 });
 
-test('route: Windows-native, psmux/tmux and PowerShell commands are left un-injected', () => {
+test('route: psmux/tmux, PowerShell cmdlets and cmd.exe builtins stay on the host shell', () => {
   const gitBash = fakeBashFile('git');
   fs.writeFileSync(gitBash, '');
   try {
@@ -115,10 +115,19 @@ test('route: Windows-native, psmux/tmux and PowerShell commands are left un-inje
       'powershell -Command Get-Process',
       'pwsh -NoProfile -Command "Get-Date"',
       'Get-Content C:/tmp/a.txt | Select-String foo',
-      'where.exe bash.exe',
       'dir *.log',
-      'netstat -ano',
-      'node --version',
+      'cls',
+      'copy a.txt b.txt',
+      'del x.tmp',
+      'ren a b',
+      'move a b',
+      'md newdir',
+      'rd olddir',
+      'type x.txt',
+      'start notepad',
+      'deploy.ps1',
+      'setup.bat',
+      'build.cmd',
     ];
     for (const cmd of cmds) {
       const r = runRoute({ cmd }, { OMO_CODEX_GIT_BASH_PATH: gitBash });
@@ -126,6 +135,57 @@ test('route: Windows-native, psmux/tmux and PowerShell commands are left un-inje
       assert.equal(r.shell, null, cmd);
     }
   } finally {
+    fs.rmSync(gitBash, { force: true });
+  }
+});
+
+test('route: node/npm/npx, Windows exes and cmd /c route to Niubash by default with a Git PATH prefix', () => {
+  const niubash = fakeBashFile('niu');
+  const gitBash = fakeBashFile('git');
+  fs.writeFileSync(niubash, '');
+  fs.writeFileSync(gitBash, '');
+  try {
+    const cmds = [
+      'node --version',
+      'npm test',
+      'npx tsc --version',
+      'where.exe bash.exe',
+      'reg query HKLM\\SOFTWARE /v x',
+      'ping -n 1 127.0.0.1',
+      'netstat -ano',
+      'cmd /c echo from-cmd',
+    ];
+    for (const cmd of cmds) {
+      const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
+      assert.equal(r.action, 'niubash', cmd);
+      assert.equal(r.shell, niubash, cmd);
+      assert.equal(r.cmd, gitPathPrefix(gitBash) + cmd, cmd);
+    }
+  } finally {
+    fs.rmSync(niubash, { force: true });
+    fs.rmSync(gitBash, { force: true });
+  }
+});
+
+test('route: tmux or powershell mentioned as an argument still routes to Niubash', () => {
+  const niubash = fakeBashFile('niu');
+  const gitBash = fakeBashFile('git');
+  fs.writeFileSync(niubash, '');
+  fs.writeFileSync(gitBash, '');
+  try {
+    const cmds = [
+      'grep tmux notes.md',
+      'cat /etc/hosts | grep -i tmux',
+      'ls -la C:/tmux',
+      'git log --oneline | grep pwsh',
+    ];
+    for (const cmd of cmds) {
+      const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
+      assert.equal(r.action, 'niubash', cmd);
+      assert.equal(r.shell, niubash, cmd);
+    }
+  } finally {
+    fs.rmSync(niubash, { force: true });
     fs.rmSync(gitBash, { force: true });
   }
 });

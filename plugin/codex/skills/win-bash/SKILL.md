@@ -21,10 +21,13 @@ The `win-bash` PreToolUse hook classifies each `exec_command` and rewrites
   Niubash's own `bash`/`sed`/`grep`/`find` stay primary and an inner `bash`
   still resolves to Niubash.
 - **Windows-native -> keep PowerShell.** `psmux`, `pmux`, `tmux`, `powershell`,
-  `pwsh`, PowerShell cmdlets (`Get-Content`, `Select-String`), and Windows
-  commands (`where`, `dir`, `reg`, `netstat`, ...) are left untouched.
-- **Everything else -> keep the host shell.** Ambiguous or cross-platform
-  commands (`node`, `npm`, ...) are not rewritten.
+  `pwsh`, PowerShell cmdlets (`Get-Content`, `Select-String`), cmd.exe builtins
+  with no standalone `.exe` (`dir`, `copy`, `type`, `cls`, `start`, ...), and
+  Windows shell scripts (`.ps1`, `.bat`, `.cmd`) are left untouched.
+- **Everything else -> Niubash Bash.** `node`, `npm`, `npx`, Windows
+  executables (`where`, `reg`, `ping`, `netstat`, `ipconfig`, `whoami`, ...),
+  `cmd /c ...`, and any other command route to the Niubash Bash with the Git
+  PATH prefix (append order), unless they explicitly need PowerShell.
 - If no Niubash is installed, the hook falls back to the standard Git Bash for
   bash/POSIX commands.
 

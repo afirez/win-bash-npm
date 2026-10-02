@@ -100,9 +100,15 @@ The PreToolUse hook routes each `exec_command` to the right shell:
   `bash`/`sed`/`grep`/`find` stay primary and an inner `bash` still resolves
   to Niubash. When no Niubash is installed, these fall back to the standard
   Git Bash.
-- Windows-native operations (`psmux`, `tmux`, `powershell`, `pwsh`, PowerShell
-  cmdlets, `cmd` builtins) are **left on the host PowerShell**.
-- Ambiguous / cross-platform commands (`node`, `npm`, ...) are not rewritten.
+- Windows-native operations that genuinely need a Windows shell are **left on
+  the host PowerShell**: `psmux`/`pmux`/`tmux`, `powershell`/`pwsh` when RUN as
+  a command, PowerShell Verb-Noun cmdlets (`Get-Content`, `Select-String`),
+  cmd.exe builtins with no standalone `.exe` (`dir`, `copy`, `type`, `cls`,
+  `start`, ...), and Windows shell scripts (`.ps1`, `.bat`, `.cmd`).
+- Everything else routes to the Niubash Bash by default: `node`, `npm`, `npx`,
+  Windows executables (`where`, `reg`, `ping`, `netstat`, `ipconfig`, ...),
+  `cmd /c ...`, and any command not matched above, all with the same Git PATH
+  prefix.
 - The Niubash profile (`~/.niubashrc`) is configured to inherit the same Git
   Bash commands for interactive Niubash sessions.
 

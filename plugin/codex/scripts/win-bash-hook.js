@@ -201,17 +201,17 @@ function configure() {
 // Unix-like host and emit POSIX commands that break pwsh panes).
 const WINDOWS_NATIVE_WORDS = ['psmux', 'pmux', 'tmux', 'powershell', 'pwsh'];
 
-// First-token Windows commands that should stay on the host PowerShell.
-const WINDOWS_FIRST_TOKENS = new Set([
-  'where', 'dir', 'cls', 'copy', 'del', 'ren', 'move', 'md', 'rd',
-  'attrib', 'chkdsk', 'diskpart', 'wmic', 'ping', 'tracert', 'nslookup',
-  'systeminfo', 'tree', 'robocopy', 'xcopy', 'tasklist', 'taskkill',
-  'schtasks', 'reg', 'regedit', 'netstat', 'ipconfig', 'whoami',
-  'start', 'msbuild', 'devenv',
+// First-token commands that must stay on the host PowerShell: cmd.exe builtins
+// that have no standalone .exe (Niubash/bash would fail or behave differently).
+// Windows shell scripts (.ps1/.bat/.cmd) also stay on the host shell. Every
+// other command routes to the Niubash Bash by default.
+const HOST_FIRST_TOKENS = new Set([
+  'dir', 'cls', 'copy', 'del', 'ren', 'move', 'md', 'rd', 'type', 'start',
 ]);
 
-// First-token commands that need Bash/POSIX semantics and therefore route to
-// the standard Git Bash. Niubash is never the routing default.
+// First-token commands that need Bash/POSIX semantics. They route to the
+// Niubash Bash explicitly (the final classify() default routes everything else
+// to Niubash too); this set documents the POSIX-first surface.
 const POSIX_FIRST_TOKENS = new Set([
   'bash', 'sh', 'zsh', 'dash', 'ash', 'ksh',
   'grep', 'egrep', 'fgrep', 'rg', 'sed', 'awk', 'perl',
@@ -235,16 +235,21 @@ function firstToken(cmd) {
 }
 
 function hasWindowsNativeWord(cmd) {
+  // Match the native words only where they are being RUN as a command: at the
+  // start of the line or right after a command separator (; & | ( ). Never as
+  // an argument such as `grep tmux`, so POSIX pipelines stay in Niubash.
   const lower = String(cmd).toLowerCase();
   return WINDOWS_NATIVE_WORDS.some((word) => {
     const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(^|[^a-z0-9])${escaped}(\\.exe)?($|[^a-z0-9])`).test(lower);
+    return new RegExp(`(^|[;&|(]\\s*)${escaped}(\\.exe)?(\\s|$|[^a-z0-9])`).test(lower);
   });
 }
 
-// Classify a command as needing Bash ('niubash') or staying on the host shell
-// ('none'). Plan B: every bash/POSIX command and shell script routes to the
-// Niubash Bash; Windows-native checks run first so piped PowerShell/tmux
+// Classify a command as needing the Niubash Bash ('niubash') or staying on the
+// host PowerShell ('none'). Plan B: everything routes to the Niubash Bash
+// except commands that genuinely require a Windows native shell (tmux/psmux/
+// pmux/powershell/pwsh, PowerShell Verb-Noun cmdlets, and cmd.exe builtins with
+// no standalone .exe). Windows-native checks run first so piped PowerShell/tmux
 // commands are never dragged into Bash.
 function classify(cmd) {
   if (typeof cmd !== 'string' || !cmd.trim()) return 'none';
@@ -252,12 +257,13 @@ function classify(cmd) {
   if (hasWindowsNativeWord(cmd)) return 'none';
   const ft = firstToken(cmd);
   if (/^[a-z]+-[a-z0-9]+$/.test(ft)) return 'none'; // PowerShell Verb-Noun cmdlet
-  if (WINDOWS_FIRST_TOKENS.has(ft)) return 'none';
+  if (HOST_FIRST_TOKENS.has(ft)) return 'none';
+  if (ft.endsWith('.ps1') || ft.endsWith('.psm1') || ft.endsWith('.psd1') || ft.endsWith('.bat') || ft.endsWith('.cmd')) return 'none';
   if (ft === 'bash') return 'niubash';
   if (POSIX_FIRST_TOKENS.has(ft)) return 'niubash';
   if (ft === '.' || ft.startsWith('./') || ft.startsWith('../') || ft.endsWith('.sh')) return 'niubash';
   if (/(\||&&|\$\(|\$\{|`|>>|>|\#\!)/.test(lower)) return 'niubash';
-  return 'none';
+  return 'niubash'; // Everything else routes to the Niubash Bash (+ Git inheritance).
 }
 
 // Per-command escape hatches, parsed from a leading token and stripped before

@@ -15,15 +15,23 @@ Decision order:
 2. Escape hatch `WIN_BASH_SHELL=<path>` -> force that shell (marker stripped;
    ignored when the path does not exist).
 3. Explicit `shell` in the tool input -> respected, never rewritten.
-4. Windows-native (`psmux|pmux|tmux|powershell|pwsh` anywhere, PowerShell
-   Verb-Noun cmdlets, Windows first-tokens like `where/dir/reg/netstat`) -> no
-   rewrite (stays on host PowerShell).
+4. Windows-native -> no rewrite (stays on host PowerShell):
+   - `psmux|pmux|tmux|powershell|pwsh` when RUN as a command (start of line or
+     right after a `; & | (` separator), never as an argument such as
+     `grep tmux`;
+   - PowerShell Verb-Noun cmdlets (`Get-Content`, `Select-String`, ...);
+   - cmd.exe builtins with no standalone `.exe` (`dir`, `cls`, `copy`, `del`,
+     `ren`, `move`, `md`, `rd`, `type`, `start`);
+   - Windows shell scripts (`.ps1`, `.psm1`, `.psd1`, `.bat`, `.cmd`).
 5. bash/POSIX (`bash`, `grep/sed/awk/find/ls/cat/cd/git/curl/...`, `./x.sh`,
    `sh x.sh`, `bash x.sh`, `source env.sh`, pipes/`&&`/`$(...)` operators) ->
    rewrite `shell` to the Niubash Bash via `resolveBash()` and prefix `cmd`
    with `export PATH="$PATH:<git dirs>"; ` so Niubash inherits Git Bash
    commands.
-6. Everything else (e.g. `node`, `npm`) -> no rewrite.
+6. Everything else -> rewrite to the Niubash Bash (the default): `node`, `npm`,
+   `npx`, Windows executables (`where`, `reg`, `ping`, `netstat`, `ipconfig`,
+   `whoami`, `tasklist`, `tree`, ...), `cmd /c ...`, and any command not matched
+   above all route to Niubash with the same Git PATH prefix.
 
 The Git dirs are derived from `resolveGitBash()` (standard Git Bash, never a
 `winuxcmd\bin\bash.exe` Niubash candidate): `<git>/usr/bin`, `<git>/bin`,
@@ -55,7 +63,7 @@ contract). The hook never emits `additionalContext` in PreToolUse.
 
 | # | Acceptance | Evidence |
 |---|---|---|
-| 1 | ordinary command -> expected injected shell + PATH prefix | `route`: `grep foo`/`ls -la` -> Niubash shell + `export PATH="..."; ` prefix; `node --version` -> none |
+| 1 | ordinary command -> expected injected shell + PATH prefix | `route`: `grep foo`/`ls -la`/`node --version`/`npm test`/`cmd /c echo x` -> Niubash shell + `export PATH="..."; ` prefix |
 | 2 | shell scripts -> Niubash + PATH prefix | `route`: `bash script.sh`/`./tools/sync.sh` -> Niubash shell + Git PATH prefix |
 | 3 | psmux/tmux stays PowerShell, no ParserError | `route`: `psmux ls`/`tmux ls`/`powershell ...` -> action none (no rewrite) |
 | 4 | WIN_BASH_SKIP / WIN_BASH_SHELL per-command | `route`: skip forces none+strip; force injects path+strip |
@@ -69,15 +77,18 @@ the hook to load.
 
 ## Evidence (2026-10-03, Plan B)
 
-- `npm test`: 23/23 pass (Plan B routing: bash/POSIX/scripts -> Niubash with Git
-  PATH prefix; Windows-native -> none; escape hatches + explicit-shell respect;
-  rc Git-inherit block present).
+- `npm test`: 26/26 pass (Plan B routing: everything except psmux/tmux/
+  PowerShell cmdlets/cmd.exe builtins -> Niubash with Git PATH prefix; escape
+  hatches + explicit-shell respect; rc Git-inherit block present).
 - Real-machine `route` probes:
   - `grep foo`, `bash script.sh`, `bash -c 'echo hi | awk ...'`, `ls -la` ->
     `action=niubash`, `shell=F:\studio\apps\Niubash\winuxcmd\bin\bash.exe`,
     `cmd=export PATH="$PATH:/c/Program Files/Git/usr/bin:/c/Program Files/Git/bin:/c/Program Files/Git/cmd"; <cmd>`
-  - `psmux ls`, `tmux ls`, `powershell -Command Get-Process`, `node --version` ->
-    `action=none` (no rewrite)
+  - `psmux ls`, `tmux ls`, `powershell -Command Get-Process`, `dir *.log`,
+    `copy a b`, `deploy.ps1` -> `action=none` (no rewrite)
+  - `node --version`, `npm test`, `where.exe bash.exe`, `reg query ...`,
+    `ping -n 1 ...`, `netstat -ano`, `cmd /c echo x`, `grep tmux notes.md` ->
+    `action=niubash` with Niubash shell + Git PATH prefix
 - End-to-end under Niubash with the injected prefix: `grep`/`awk`/`gzip|gunzip`/
   `perl`/`sed` all resolve from Git and run correctly; `bash script.sh` runs with
   Git Bash tools inherited.
