@@ -89,13 +89,20 @@ Niubash is installed under `D:\apps\Niubash` when the `D:` drive exists, otherwi
 
 The CLI copies the bundled Codex plugin into a local marketplace, registers it with `codex plugin add`, and runs the plugin installer to resolve or install Niubash Bash.
 
-The PreToolUse hook routes each `exec_command` to the right shell instead of forcing Niubash everywhere:
+The PreToolUse hook routes each `exec_command` to the right shell:
 
-- `bash` command execution (`bash -c '...'`, `bash <cmd>`) runs in **Niubash Bash** (the configured shell); it routes to Git Bash when the command runs a `.sh` script or uses `awk` (Niubash has no `awk`).
-- POSIX commands, shell scripts (`./x.sh`, `sh x.sh`, `bash x.sh`), and piped/chained commands (`grep`, `sed`, `awk`, `find`, `git`, `| && || \$(...)`) run in the **standard Git Bash** (`C:\Program Files\Git\bin\bash.exe` by default, or `OMO_CODEX_GIT_BASH_PATH`).
-- Windows-native operations (`psmux`, `tmux`, `powershell`, `pwsh`, PowerShell cmdlets, `cmd` builtins) are **left on the host PowerShell**.
+- **bash/POSIX commands and shell scripts run in the Niubash Bash** (`bash`,
+  `grep`, `sed`, `awk`, `find`, `git`, `./x.sh`, `sh x.sh`, `bash x.sh`,
+  pipes, `&&`, `\$(...)`). The hook sets `shell = <Niubash Bash>` and prefixes
+  the command with `export PATH="<git dirs>:$PATH"; ` so Niubash inherits the
+  standard Git Bash commands (`awk`/`gzip`/`perl`/`tar`/`sed`) it does not
+  ship with. When no Niubash is installed, these fall back to the standard Git
+  Bash.
+- Windows-native operations (`psmux`, `tmux`, `powershell`, `pwsh`, PowerShell
+  cmdlets, `cmd` builtins) are **left on the host PowerShell**.
 - Ambiguous / cross-platform commands (`node`, `npm`, ...) are not rewritten.
-- Niubash Bash is the default only for bare `bash` command execution, and otherwise only when explicitly requested via the `WIN_BASH_SHELL=<path>` escape hatch or an explicit `shell`.
+- The Niubash profile (`~/.niubashrc`) is configured to inherit the same Git
+  Bash commands for interactive Niubash sessions.
 
 Per-command escape hatches (the hook strips the marker before running the command):
 

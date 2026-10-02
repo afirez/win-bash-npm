@@ -13,6 +13,9 @@ opencode is configured to run its bash tool through Niubash Bash on Windows.
 
 - The opencode `shell` config key points at the Niubash Bash executable. Niubash is also on PATH, so opencode discovers it automatically.
 - Run shell commands normally through the bash tool; they execute in Niubash Bash (bash 5.x).
+- The Niubash profile (`~/.niubashrc`) configured by `win-bash` inherits standard
+  Git Bash commands (`awk`, `gzip`, `perl`, `tar`, `sed`, ...), so Niubash
+  behaves like a complete POSIX shell for pipelines, scripts, and Git workflows.
 
 ## Rules
 

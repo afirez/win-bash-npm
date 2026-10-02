@@ -85,6 +85,8 @@ if (-not $SkipConfig) {
         Write-Host "Created default Niubash config: $rc"
     } elseif ($cfg.rc_result.reason -eq 'legacy-exists') {
         Write-Host "Legacy config detected; preserved $legacyRc and did not create $rc"
+    } elseif ($cfg.rc_result.reason -eq 'git-inherit-appended') {
+        Write-Host "Appended Git command inheritance to existing Niubash config: $rc"
     } else {
         Write-Host "Existing Niubash config preserved: $rc"
     }

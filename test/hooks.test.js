@@ -21,6 +21,20 @@ function fakeBashFile(label) {
   return path.join(os.tmpdir(), `win-bash-${label}-${process.pid}-bash.exe`);
 }
 
+// Mirror of the hook's toPosixPath so tests can assert the exact Git PATH
+// prefix that lets Niubash inherit Git Bash commands.
+function toPosixPath(value) {
+  const drive = String(value).match(/^([A-Za-z]):[\\/](.*)$/);
+  if (!drive) return String(value).replace(/\\/g, '/');
+  return `/${drive[1].toLowerCase()}/${drive[2].replace(/\\/g, '/')}`;
+}
+
+function gitPathPrefix(gitBash) {
+  const root = toPosixPath(path.dirname(path.dirname(gitBash)));
+  const dirs = [`${root}/usr/bin`, `${root}/bin`, `${root}/cmd`];
+  return `export PATH="${dirs.join(':')}:$PATH"; `;
+}
+
 test('bundled Codex plugin version is fixed', () => {
   assert.match(getPluginVersion(), /^\d+\.\d+\.\d+$/);
 });
@@ -45,8 +59,10 @@ test('hook resolves only winuxcmd/bin/bash.exe entries and never niu.exe', () =>
   assert.equal(hook.includes(String.raw`F:\studio\apps\Niubash`), false, 'hook must not hardcode the F: install path');
 });
 
-test('route: POSIX text tools, git and chained commands route to Git Bash, never Niubash', () => {
+test('route: POSIX text tools, git and chained commands route to Niubash with a Git PATH prefix', () => {
+  const niubash = fakeBashFile('niu');
   const gitBash = fakeBashFile('git');
+  fs.writeFileSync(niubash, '');
   fs.writeFileSync(gitBash, '');
   try {
     const cmds = [
@@ -58,26 +74,32 @@ test('route: POSIX text tools, git and chained commands route to Git Bash, never
       'cd /c/foo && make',
     ];
     for (const cmd of cmds) {
-      const r = runRoute({ cmd }, { OMO_CODEX_GIT_BASH_PATH: gitBash });
-      assert.equal(r.action, 'bash', cmd);
-      assert.equal(r.shell, gitBash, cmd);
+      const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
+      assert.equal(r.action, 'niubash', cmd);
+      assert.equal(r.shell, niubash, cmd);
+      assert.equal(r.cmd, gitPathPrefix(gitBash) + cmd, cmd);
     }
   } finally {
+    fs.rmSync(niubash, { force: true });
     fs.rmSync(gitBash, { force: true });
   }
 });
 
-test('route: shell scripts route to Git Bash', () => {
+test('route: shell scripts route to Niubash with a Git PATH prefix', () => {
+  const niubash = fakeBashFile('niu');
   const gitBash = fakeBashFile('git');
+  fs.writeFileSync(niubash, '');
   fs.writeFileSync(gitBash, '');
   try {
     const cmds = ['bash script.sh', 'sh deploy.sh', './tools/sync.sh', 'source env.sh && npm test'];
     for (const cmd of cmds) {
-      const r = runRoute({ cmd }, { OMO_CODEX_GIT_BASH_PATH: gitBash });
-      assert.equal(r.action, 'bash', cmd);
-      assert.equal(r.shell, gitBash, cmd);
+      const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
+      assert.equal(r.action, 'niubash', cmd);
+      assert.equal(r.shell, niubash, cmd);
+      assert.equal(r.cmd, gitPathPrefix(gitBash) + cmd, cmd);
     }
   } finally {
+    fs.rmSync(niubash, { force: true });
     fs.rmSync(gitBash, { force: true });
   }
 });
@@ -157,15 +179,22 @@ test('route: an explicitly passed shell is respected and never rewritten', () =>
   assert.equal(r.cmd, 'git status');
 });
 
-test('route: a Niubash-valued OMO_CODEX_GIT_BASH_PATH override is rejected (Git Bash only)', () => {
+test('route: a Niubash-valued OMO_CODEX_GIT_BASH_PATH override never leaks into the injected Git PATH', () => {
+  const niubash = fakeBashFile('niu');
   const fakeWinux = path.join(os.tmpdir(), 'winuxcmd', 'bin', 'bash.exe');
+  fs.writeFileSync(niubash, '');
   fs.mkdirSync(path.dirname(fakeWinux), { recursive: true });
   fs.writeFileSync(fakeWinux, '');
   try {
-    const r = runRoute({ cmd: 'grep foo' }, { OMO_CODEX_GIT_BASH_PATH: fakeWinux });
-    assert.notEqual(r.shell, fakeWinux, 'Niubash-valued override must never be used as Git Bash');
-    assert.equal(r.action, 'bash', 'POSIX command still routes to a (real) Git Bash or none');
+    const r = runRoute({ cmd: 'grep foo' }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: fakeWinux });
+    assert.equal(r.action, 'niubash');
+    assert.equal(r.shell, niubash, 'Niubash stays the routed shell');
+    assert.equal(r.cmd.toLowerCase().includes('winuxcmd'), false, 'injected Git PATH must never contain the Niubash winuxcmd dir');
+    if (r.cmd.startsWith('export PATH="')) {
+      assert.equal(r.cmd.includes(toPosixPath(path.dirname(path.dirname(fakeWinux)))), false);
+    }
   } finally {
+    fs.rmSync(niubash, { force: true });
     fs.rmSync(path.dirname(path.dirname(fakeWinux)), { recursive: true, force: true });
   }
 });
@@ -185,17 +214,28 @@ test('route: bash command execution routes to Niubash', () => {
   }
 });
 
-test('route: bash running a .sh script or using awk routes to Git Bash, not Niubash', () => {
+test('route: bash running a .sh script or using awk routes to Niubash, inheriting Git commands', () => {
+  const niubash = fakeBashFile('niu');
   const gitBash = fakeBashFile('git');
+  fs.writeFileSync(niubash, '');
   fs.writeFileSync(gitBash, '');
   try {
     const cmds = ['bash script.sh', 'bash deploy.sh', 'bash -c \'echo x | awk "{print $1}"\''];
     for (const cmd of cmds) {
-      const r = runRoute({ cmd }, { OMO_CODEX_GIT_BASH_PATH: gitBash });
-      assert.equal(r.action, 'bash', cmd);
-      assert.equal(r.shell, gitBash, cmd);
+      const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
+      assert.equal(r.action, 'niubash', cmd);
+      assert.equal(r.shell, niubash, cmd);
+      assert.equal(r.cmd, gitPathPrefix(gitBash) + cmd, cmd);
     }
   } finally {
+    fs.rmSync(niubash, { force: true });
     fs.rmSync(gitBash, { force: true });
   }
+});
+
+test('hook DEFAULT_RC lets Niubash inherit standard Git Bash commands', () => {
+  const hook = fs.readFileSync(path.join(getBundledPluginRoot(), 'scripts', 'win-bash-hook.js'), 'utf8');
+  assert.ok(hook.includes('__wb_git_root'), 'rc must self-detect a Git for Windows install');
+  assert.ok(hook.includes('usr/bin/awk.exe'), 'rc must probe for a Git command (awk)');
+  assert.ok(hook.includes('export PATH="'), 'rc must prepend the Git dirs onto PATH');
 });

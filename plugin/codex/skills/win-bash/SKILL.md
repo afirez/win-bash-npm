@@ -1,37 +1,33 @@
----
-name: win-bash
-description: Use on Windows when shell commands need POSIX/Bash semantics through Codex exec_command. Applies to pipes, shell scripts, grep/sed/awk, git workflows, and other commands that should run in Bash instead of the default PowerShell. Skip for Windows-native operations that require PowerShell.
-metadata:
-  short-description: Route Windows shell commands through the right shell (Git Bash / PowerShell)
----
-
 # Win Bash
 
-Route Windows shell work through the right shell: POSIX/Bash commands run in the
-standard Git Bash, Windows-native commands stay in PowerShell, and Niubash Bash
-is used only when explicitly requested.
+Route Windows shell work through the Niubash Bash. Every bash/POSIX command and
+shell script runs in your Niubash Bash, which inherits standard Git Bash
+commands (`awk`, `gzip`, `perl`, `tar`, `sed`, ...) so Niubash behaves like a
+complete POSIX shell. Windows-native commands stay in PowerShell.
 
 ## Auto-routing (Codex PreToolUse hook)
 
 The `win-bash` PreToolUse hook classifies each `exec_command` and rewrites
-`shell` only when needed:
+`shell` (and the `cmd` prefix) only when needed:
 
-- **`bash` command execution -> Niubash Bash.** A bare `bash` invocation
-  (`bash -c '...'`, `bash <cmd>`) runs in your Niubash Bash. Exception: when the
-  `bash` command runs a `.sh` script or uses `awk` (Niubash has no `awk`), it
-  routes to standard Git Bash instead.
-- **POSIX -> standard Git Bash.** POSIX utilities and bash builtins
+- **bash/POSIX -> Niubash Bash + Git command inheritance.** A bare `bash`
+  invocation (`bash -c '...'`, `bash <cmd>`), POSIX utilities and bash builtins
   (`grep`, `sed`, `awk`, `find`, `ls`, `cat`, `cd`, `curl`, `git`, ...), shell
   scripts (`./x.sh`, `sh x.sh`, `bash x.sh`, `source env.sh`), and piped/chained
-  commands (`|`, `&&`, `||`, `$(...)`, `>`).
+  commands (`|`, `&&`, `||`, `$(...)`, `>`). The hook sets
+  `shell = <Niubash Bash>` and prefixes the command with
+  `export PATH="<git dirs>:$PATH"; ` so Niubash can run the standard Git Bash
+  tools it does not ship with.
 - **Windows-native -> keep PowerShell.** `psmux`, `pmux`, `tmux`, `powershell`,
   `pwsh`, PowerShell cmdlets (`Get-Content`, `Select-String`), and Windows
   commands (`where`, `dir`, `reg`, `netstat`, ...) are left untouched.
 - **Everything else -> keep the host shell.** Ambiguous or cross-platform
   commands (`node`, `npm`, ...) are not rewritten.
-- **Niubash Bash is the default only for bare `bash` command execution**, and
-  is otherwise used when explicitly requested (see escape hatches below). It is
-  never the default for other POSIX or Windows-native commands.
+- If no Niubash is installed, the hook falls back to the standard Git Bash for
+  bash/POSIX commands.
+
+The Niubash profile (`~/.niubashrc`) is also configured by `win-bash` to inherit
+the same Git Bash commands for interactive Niubash sessions.
 
 If the model already passed an explicit `shell`, the hook respects it and does
 not rewrite.
@@ -56,13 +52,13 @@ WIN_BASH_SHELL="F:\studio\apps\Niubash\winuxcmd\bin\bash.exe" ./niubash-only.sh
 ## Required invocation (fallback)
 
 If the hook is unavailable or ignored, call `exec_command` with the absolute
-Bash executable:
+Niubash Bash executable:
 
 ```json
 {
-  "cmd": "pwd; printf 'bash=%s\\n' \"$BASH_VERSION\"",
+  "cmd": "export PATH=\"/c/Program Files/Git/usr/bin:/c/Program Files/Git/bin:/c/Program Files/Git/cmd:$PATH\"; pwd; printf 'bash=%s\\n' \"$BASH_VERSION\"",
   "workdir": "F:\\studio\\ai_agent\\UltraWorker",
-  "shell": "C:\\Program Files\\Git\\bin\\bash.exe"
+  "shell": "F:\\studio\\apps\\Niubash\\winuxcmd\\bin\\bash.exe"
 }
 ```
 
@@ -71,7 +67,7 @@ Do not use a bare `bash`; PATH may resolve to WSL or a different Bash.
 ## Rules
 
 - Prefer Bash for POSIX pipelines, shell scripts, `grep`, `sed`, `awk`, `find`,
-  and Git commands (auto-routed to standard Git Bash).
+  and Git commands (auto-routed to Niubash with Git command inheritance).
 - Use PowerShell for Windows-native operations that cannot run correctly in
   Bash (auto-left on PowerShell; force with `WIN_BASH_SKIP=1` if needed).
 - If a command depends on a native Windows program, pass a Windows-compatible
