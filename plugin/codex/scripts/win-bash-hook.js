@@ -221,6 +221,10 @@ function classify(cmd) {
   const ft = firstToken(cmd);
   if (/^[a-z]+-[a-z0-9]+$/.test(ft)) return 'none'; // PowerShell Verb-Noun cmdlet
   if (WINDOWS_FIRST_TOKENS.has(ft)) return 'none';
+  if (ft === 'bash') {
+    if (/\bawk\b|\bgawk\b|\.sh\b/.test(lower)) return 'bash'; // script or awk -> Git Bash
+    return 'niubash';
+  }
   if (POSIX_FIRST_TOKENS.has(ft)) return 'bash';
   if (ft === '.' || ft.startsWith('./') || ft.startsWith('../') || ft.endsWith('.sh')) return 'bash';
   if (/(\||&&|\$\(|\$\{|`|>>|>|\#\!)/.test(lower)) return 'bash';
@@ -272,7 +276,14 @@ function decide(input) {
   if (markers.skip) return { action: 'skip', shell: null, cmd: markers.cmd };
   if (markers.force) return { action: 'force', shell: isFile(markers.force) ? markers.force : null, cmd: markers.cmd };
   if (input.shell) return { action: 'respect', shell: null, cmd: original };
-  if (classify(markers.cmd) === 'bash') {
+  const kind = classify(markers.cmd);
+  if (kind === 'niubash') {
+    const niubash = resolveBash();
+    if (niubash) return { action: 'niubash', shell: niubash, cmd: markers.cmd };
+    const gitBash = resolveGitBash();
+    return { action: gitBash ? 'bash' : 'none', shell: gitBash, cmd: markers.cmd };
+  }
+  if (kind === 'bash') {
     const gitBash = resolveGitBash();
     return { action: gitBash ? 'bash' : 'none', shell: gitBash, cmd: markers.cmd };
   }

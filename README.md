@@ -91,10 +91,11 @@ The CLI copies the bundled Codex plugin into a local marketplace, registers it w
 
 The PreToolUse hook routes each `exec_command` to the right shell instead of forcing Niubash everywhere:
 
-- POSIX commands, shell scripts, and piped/chained commands (`grep`, `sed`, `awk`, `find`, `git`, `bash x.sh`, `./x.sh`, `| && || \$(...)`) run in the **standard Git Bash** (`C:\Program Files\Git\bin\bash.exe` by default, or `OMO_CODEX_GIT_BASH_PATH`).
+- `bash` command execution (`bash -c '...'`, `bash <cmd>`) runs in **Niubash Bash** (the configured shell); it routes to Git Bash when the command runs a `.sh` script or uses `awk` (Niubash has no `awk`).
+- POSIX commands, shell scripts (`./x.sh`, `sh x.sh`, `bash x.sh`), and piped/chained commands (`grep`, `sed`, `awk`, `find`, `git`, `| && || \$(...)`) run in the **standard Git Bash** (`C:\Program Files\Git\bin\bash.exe` by default, or `OMO_CODEX_GIT_BASH_PATH`).
 - Windows-native operations (`psmux`, `tmux`, `powershell`, `pwsh`, PowerShell cmdlets, `cmd` builtins) are **left on the host PowerShell**.
 - Ambiguous / cross-platform commands (`node`, `npm`, ...) are not rewritten.
-- Niubash Bash is used only when explicitly requested via the `WIN_BASH_SHELL=<path>` escape hatch or an explicit `shell`.
+- Niubash Bash is the default only for bare `bash` command execution, and otherwise only when explicitly requested via the `WIN_BASH_SHELL=<path>` escape hatch or an explicit `shell`.
 
 Per-command escape hatches (the hook strips the marker before running the command):
 

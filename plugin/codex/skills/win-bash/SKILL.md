@@ -16,17 +16,22 @@ is used only when explicitly requested.
 The `win-bash` PreToolUse hook classifies each `exec_command` and rewrites
 `shell` only when needed:
 
+- **`bash` command execution -> Niubash Bash.** A bare `bash` invocation
+  (`bash -c '...'`, `bash <cmd>`) runs in your Niubash Bash. Exception: when the
+  `bash` command runs a `.sh` script or uses `awk` (Niubash has no `awk`), it
+  routes to standard Git Bash instead.
 - **POSIX -> standard Git Bash.** POSIX utilities and bash builtins
   (`grep`, `sed`, `awk`, `find`, `ls`, `cat`, `cd`, `curl`, `git`, ...), shell
-  scripts (`bash x.sh`, `./x.sh`, `source env.sh`), and piped/chained commands
-  (`|`, `&&`, `||`, `$(...)`, `>`).
+  scripts (`./x.sh`, `sh x.sh`, `bash x.sh`, `source env.sh`), and piped/chained
+  commands (`|`, `&&`, `||`, `$(...)`, `>`).
 - **Windows-native -> keep PowerShell.** `psmux`, `pmux`, `tmux`, `powershell`,
   `pwsh`, PowerShell cmdlets (`Get-Content`, `Select-String`), and Windows
   commands (`where`, `dir`, `reg`, `netstat`, ...) are left untouched.
 - **Everything else -> keep the host shell.** Ambiguous or cross-platform
   commands (`node`, `npm`, ...) are not rewritten.
-- **Niubash Bash is only used when explicitly requested** (see escape hatches
-  below). It is never the routing default.
+- **Niubash Bash is the default only for bare `bash` command execution**, and
+  is otherwise used when explicitly requested (see escape hatches below). It is
+  never the default for other POSIX or Windows-native commands.
 
 If the model already passed an explicit `shell`, the hook respects it and does
 not rewrite.

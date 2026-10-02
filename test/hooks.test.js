@@ -169,3 +169,33 @@ test('route: a Niubash-valued OMO_CODEX_GIT_BASH_PATH override is rejected (Git 
     fs.rmSync(path.dirname(path.dirname(fakeWinux)), { recursive: true, force: true });
   }
 });
+
+test('route: bash command execution routes to Niubash', () => {
+  const niubash = fakeBashFile('niu');
+  fs.writeFileSync(niubash, '');
+  try {
+    const cmds = ['bash -c "echo hi"', 'bash mycmd', 'bash'];
+    for (const cmd of cmds) {
+      const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash });
+      assert.equal(r.action, 'niubash', cmd);
+      assert.equal(r.shell, niubash, cmd);
+    }
+  } finally {
+    fs.rmSync(niubash, { force: true });
+  }
+});
+
+test('route: bash running a .sh script or using awk routes to Git Bash, not Niubash', () => {
+  const gitBash = fakeBashFile('git');
+  fs.writeFileSync(gitBash, '');
+  try {
+    const cmds = ['bash script.sh', 'bash deploy.sh', 'bash -c \'echo x | awk "{print $1}"\''];
+    for (const cmd of cmds) {
+      const r = runRoute({ cmd }, { OMO_CODEX_GIT_BASH_PATH: gitBash });
+      assert.equal(r.action, 'bash', cmd);
+      assert.equal(r.shell, gitBash, cmd);
+    }
+  } finally {
+    fs.rmSync(gitBash, { force: true });
+  }
+});
