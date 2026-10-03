@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "createdAt": "2026-10-03T09:35:20.252Z",
+  "updatedAt": "2026-10-03T09:59:15.153Z",
+  "briefPath": ".omx/ultragoal/brief.md",
+  "goalsPath": ".omx/ultragoal/goals.json",
+  "ledgerPath": ".omx/ultragoal/ledger.jsonl",
+  "codexGoalMode": "aggregate",
+  "goals": [
+    {
+      "id": "G001-config-schema-path",
+      "title": "config schema 增加三条 *_path 字段",
+      "objective": "在 src/config.js 的 win-bash.json 读写层支持 niubash_path/gitbash_path/pwsh_path：readConfig 透传新字段，writeConfig 保留，migrateConfig 兼容旧字段不破坏；getShell 语义不变。验收:写读往返保留三条字段；旧 config 读取不报错。",
+      "status": "complete",
+      "attempt": 1,
+      "createdAt": "2026-10-03T09:35:20.252Z",
+      "updatedAt": "2026-10-03T09:58:35.866Z",
+      "startedAt": "2026-10-03T09:35:37.262Z",
+      "completedAt": "2026-10-03T09:58:35.866Z",
+      "evidence": "src/config.js getPaths() added; readConfig/writeConfig round-trip 3 *_path; old config clean; config.test.js +2 tests; 52/52 npm test green; real configure wrote all 3 *_path preserving shell"
+    },
+    {
+      "id": "G002-config-path",
+      "title": "路径解析优先读 config *_path",
+      "objective": "在 src/niubash.js 的 resolveBashPath/resolveGitBashPath/resolvePwshPath 各自优先读 config 对应 *_path(存在且 isFile 才用)，否则回退现有动态链；resolveShellPath 链不变。验收:配置路径有效时用它，缺失/失效时走动态解析；现有 niubash.test.js 通过。",
+      "status": "complete",
+      "attempt": 0,
+      "createdAt": "2026-10-03T09:35:20.252Z",
+      "updatedAt": "2026-10-03T09:58:46.519Z",
+      "completedAt": "2026-10-03T09:58:46.519Z",
+      "evidence": "src/niubash.js resolveBashPath/resolveGitBashPath/resolvePwshPath prefer config *_path (isFile for niubash/git; pwsh trusted); invalid falls back; niubash.test.js +5 tests; real resolve returns F: Niubash + C: Git + pwsh"
+    },
+    {
+      "id": "G003-hook-configure-x",
+      "title": "hook configure 按策略 X 落盘三条路径",
+      "objective": "改 plugin/codex/scripts/win-bash-hook.js 的 configure()/writeConfig：解析 niubash/git/pwsh 三路径，缺失或失效才补写对应 *_path；shell 已存在且有效则尊重(保留手动改)；ensureDefaultRc 保持 v3 幂等。验收:session-start 两次运行第二次 rc_result.reason=exists、*_path 不重复覆盖、手动 shell 被保留。",
+      "status": "complete",
+      "attempt": 0,
+      "createdAt": "2026-10-03T09:35:20.252Z",
+      "updatedAt": "2026-10-03T09:58:46.980Z",
+      "completedAt": "2026-10-03T09:58:46.980Z",
+      "evidence": "hook configure()/writeConfig strategy X: manual shell preserved, *_path written only when missing/invalid, second run rc_result=exists + no config rewrite; hooks.test.js +1 strategy test; real configure twice idempotent"
+    },
+    {
+      "id": "G004-git-only",
+      "title": "删除 git-only 分流分支",
+      "objective": "删除 hook 中 GIT_ONLY_WORDS/hasGitOnlyCommand 及 decide() niubash 分支里 !gitBash && hasGitOnlyCommand 的 pwsh 分流；niubash 分支简化为主 shell 链 + bareBashIsNiubash ? bash : 绝对路径；不注入 additionalContext。验收:awk/perl/gzip 不再导去 pwsh；主 shell 链路由不变；PreToolUse 只注入 updatedInput.shell + 标记剥离。",
+      "status": "complete",
+      "attempt": 0,
+      "createdAt": "2026-10-03T09:35:20.252Z",
+      "updatedAt": "2026-10-03T09:58:47.429Z",
+      "completedAt": "2026-10-03T09:58:47.429Z",
+      "evidence": "GIT_ONLY_WORDS/hasGitOnlyCommand removed; decide() niubash branch is main shell chain; PreToolUse still only updatedInput.shell + marker strip, no additionalContext; route QA: awk with NO_GIT routes niubash not pwsh"
+    },
+    {
+      "id": "G005",
+      "title": "测试与文档同步",
+      "objective": "更新 test/hooks.test.js(删除或改写 git-only divert 用例，新增主 shell 链与写盘策略 X 用例)；同步 docs/win-bash-routing.md、docs/win-bash-injection-chain.md、SKILL.md(删 git-only 分流描述、补 *_path 字段)。验收:npm test 全绿；文档不再把 git-only 分流描述为能力保障。",
+      "status": "complete",
+      "attempt": 0,
+      "createdAt": "2026-10-03T09:35:20.252Z",
+      "updatedAt": "2026-10-03T09:59:15.153Z",
+      "evidence": "git-only divert test rewritten to main-shell-chain assertion; +main-shell override / niubash_path / strategy-X tests; routing.md/injection-chain.md/codex SKILL.md synced (config single-source + strategy X + git-only removal); versions 0.4.2/0.1.6; 52/52 npm test; plugin reinstalled to cache 0.1.6 enabled; real-machine route/configure/exec QA passed",
+      "completedAt": "2026-10-03T09:59:15.153Z"
+    }
+  ],
+  "codexObjective": "Complete the durable ultragoal plan in .omx/ultragoal/goals.json, including later accepted/appended stories, under the original brief constraints; use .omx/ultragoal/ledger.jsonl as the audit trail."
+}

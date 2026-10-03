@@ -2,10 +2,11 @@
 
 Route Windows shell work through the Niubash Bash. On Windows, bash/POSIX
 commands and shell scripts should run in the Niubash Bash; Windows-native
-operations stay in PowerShell. Niubash is configured to inherit standard Git
-Bash commands (`awk`, `gzip`, `perl`, `tar`, `sed`, ...) in interactive
-sessions via `~/.niubashrc`; see "Known limitation" below for the Codex
-(tool-driven) path.
+operations stay in PowerShell. Niubash inherits standard Git Bash commands (`awk`, `gzip`, `perl`,
+`tar`, `sed`, ...) from a single shared init
+`~/.config/win-bash/git-inherit.sh`: interactive/REPL sessions via one
+`~/.niubashrc` source line, and tool-driven (`bash -lc`) sessions via
+`BASH_ENV` (see "Git command inheritance" below).
 
 ## Auto-routing (Codex PreToolUse hook)
 
@@ -61,16 +62,29 @@ a one-time install prompt at session start (`https://git-scm.com/downloads`,
 If the model already passed an explicit `shell`, the hook respects it and does
 not rewrite.
 
-## Known limitation (Niubash Git command inheritance in tool-driven paths)
+## Git command inheritance (0.5.0+)
 
-`~/.niubashrc` is Niubash's interactive rc. When a tool runs commands via
-`bash -lc '<cmd>'` (the Codex/tool-driven invocation), the interactive rc is
-NOT loaded, so the Git-inherit block does not run and `awk`/`perl`/`gzip`
-etc. from Git Bash are **not** available there (verified on this machine:
-`bash -lc` / `bash -ic` / `niu -c` all report them missing; `niu -C` REPL
-loads the rc and finds them). If a command needs such tools in a tool-driven
-session, include the Git dirs on PATH inside the command itself, e.g. prefix
-with `export PATH="$PATH:/c/Program Files/Git/usr/bin:/c/Program Files/Git/bin:/c/Program Files/Git/cmd"; `.
+Git Bash command inheritance now has a **single source of truth**: the shared
+init `~/.config/win-bash/git-inherit.sh` (dynamic Git discovery + append
+`usr/bin:bin:cmd`, idempotent, POSIX paths). It is managed by win-bash (created
+by `install`, self-healed by `doctor`); **do not hand-edit it** — run
+`win-bash doctor` to restore it.
+
+- **Interactive / REPL** (`niu -C`): `~/.niubashrc` sources the shared init
+  with a single line, so `awk`/`perl`/`gzip`/`tar`/`sed` resolve to Git.
+- **Tool-driven** (`bash -lc '<cmd>'`): bash reads the init only when
+  `BASH_ENV` points at it. Codex cannot change the host env, so in a
+  tool-driven session prefix the command with
+  `BASH_ENV="<shared init>" ` (or include the Git dirs on PATH explicitly).
+
+Explicit prefix example (verify with `awk --version` / `$BASH_VERSION`):
+
+```bash
+BASH_ENV="$HOME/.config/win-bash/git-inherit.sh" awk --version
+```
+
+SessionStart warns (read-only) when the shared init is missing; run
+`win-bash doctor` to restore it.
 
 ## Per-command override (escape hatches)
 
@@ -92,11 +106,12 @@ WIN_BASH_SHELL="F:\studio\apps\Niubash\winuxcmd\bin\bash.exe" ./niubash-only.sh
 ## Required invocation (fallback)
 
 If the hook is unavailable or ignored, call `exec_command` with the absolute
-Niubash Bash executable:
+Niubash Bash executable and set `BASH_ENV` to the shared init (POSIX form) so
+tool-driven `bash -lc` inherits Git Bash commands:
 
 ```json
 {
-  "cmd": "export PATH=\"$PATH:/c/Program Files/Git/usr/bin:/c/Program Files/Git/bin:/c/Program Files/Git/cmd\"; pwd; printf 'bash=%s\\n' \"$BASH_VERSION\"",
+  "cmd": "BASH_ENV=\"$HOME/.config/win-bash/git-inherit.sh\" pwd; printf 'bash=%s\\n' \"$BASH_VERSION\"; awk --version | head -1",
   "workdir": "F:\\studio\\ai_agent\\UltraWorker",
   "shell": "F:\\studio\\apps\\Niubash\\winuxcmd\\bin\\bash.exe"
 }

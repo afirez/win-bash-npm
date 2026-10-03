@@ -1,16 +1,19 @@
 # win-bash 注入行为全链路（Codex 深度 + 三平台对比）
 
 > 权威说明：win-bash 在 Codex / Claude Code / OpenCode 三个平台上如何把 shell 命令
-> 路由到 Niubash Bash。本文按**当前实现与实测**编写（win-bash-ai 0.4.2 / plugin 0.1.6）。
+> 路由到 Niubash Bash。本文按**当前实现与实测**编写（win-bash-ai 0.5.0 / plugin 0.1.7）。
 > 每个事实尽量带出处（源码路径或实证命令）；标注 `[known-limitation]` 的是已验证的
 > 已知限制，当前**不改行为**、仅如实记录。
+> 自 0.5.0 起，工具驱动（`bash -lc`）路径的 Git 继承由 **BASH_ENV** 指向共享 init
+> `~/.config/win-bash/git-inherit.sh` 实现：Claude Code 经 settings env 注入，Codex 经
+> 文档引导（SKILL/AGENTS）在命令前加 `BASH_ENV="<init>"` 前缀，OpenCode 无 env 键保持现状。
 
 ## 0. 三平台机制一览
 
 | 平台 | 机制 | 注入点 | 状态来源 | 故障兜底 |
 | --- | --- | --- | --- | --- |
-| Codex | **hook 动态**：SessionStart + PreToolUse | `~/.codex/plugins/cache/local-win-bash/win-bash/0.1.6/hooks/*.json` | `~/.config/win-bash/win-bash.json` + 动态探测 | Git Bash → pwsh |
-| Claude Code | **静态 env**：`CLAUDE_CODE_GIT_BASH_PATH` / `CLAUDE_CODE_SHELL` | `~/.claude/settings.json` env | 安装时 `resolveShellForInstall()` 写死 | Git Bash → pwsh |
+| Codex | **hook 动态**：SessionStart + PreToolUse | `~/.codex/plugins/cache/local-win-bash/win-bash/0.1.7/hooks/*.json` | `~/.config/win-bash/win-bash.json` + 动态探测 | Git Bash → pwsh |
+| Claude Code | **静态 env**：`CLAUDE_CODE_GIT_BASH_PATH` / `CLAUDE_CODE_SHELL` / `BASH_ENV` | `~/.claude/settings.json` env | 安装时 `resolveShellForInstall()` 写死 | Git Bash → pwsh |
 | OpenCode | **静态 shell 键**：`shell` | `~/.config/opencode/opencode.json` | 安装时 `resolveShellForInstall()` 写死 | Git Bash → pwsh |
 
 三平台共用同一份配置 `~/.config/win-bash/win-bash.json`（含 `platforms` 标记），
@@ -71,7 +74,7 @@
    - bash/POSIX/脚本/管道/默认 → `niubash`（`resolveBash()` 得 Niubash；无 Niubash 依次
      兜底 Git Bash → pwsh）。
 
-**注入形态（当前 0.1.6，关键）**：
+**注入形态（当前 0.1.7，关键）**：
 - 只写 `updatedInput.shell`（`shellChanged` 时），**command 原样保留**（仅剥 escape
   hatch 标记）；
 - **不**注入 `additionalContext`；
@@ -96,35 +99,44 @@
 
 ---
 
-## 3. Niubash 是否继承 Git Bash 命令能力（实测）
+## 3. Niubash 是否继承 Git Bash 命令能力（实测，0.5.0 起）
 
-> 这是 SKILL/README 曾声称 "Niubash inherits standard Git Bash commands
-> (`awk`, `gzip`, `perl`, `tar`, `sed`, ...)" 的验证结论。实测显示该声称
-> **只在交互/REPL 模式成立**，在 Codex 等工具驱动路径下**不成立**。
+> 自 0.5.0 起，Git 继承的**唯一来源**是共享 init
+> `~/.config/win-bash/git-inherit.sh`（动态 Git 发现 + append `usr/bin:bin:cmd`，
+> 幂等、POSIX 路径；由 install/doctor 创建，SessionStart 只读）。`.niubashrc` 用一行
+> `source` 指向它，Claude Code 用 `BASH_ENV` 指向它。工具驱动的 `bash -lc` 在
+> BASH_ENV 生效时会加载共享 init，从而继承 Git Bash 命令。
 
-| 调用方式 | `~/.niubashrc` 加载? | awk / perl / gzip |
+| 调用方式 | 共享 init 生效? | awk / perl / gzip |
 | --- | --- | --- |
-| `bash.exe -lc '<cmd>'`（Codex/工具驱动方式） | ❌ 不加载 | ❌ MISSING |
-| `bash.exe -ic '...'` / `--rcfile ... -i -c` | ❌ 不加载 | ❌ MISSING |
-| `niu.exe -c '<cmd>'`（Niubash 官方命令模式） | ❌ 不加载 | ❌ MISSING |
-| `niu.exe -C '<cmd>'`（REPL 模式） | ✅ 加载 | ✅ awk/perl/gzip/tar/sed 全 OK（来自 `/c/Program Files/Git/usr/bin/`） |
+| `bash.exe -lc '<cmd>'`（工具驱动，无 BASH_ENV） | ❌ 不生效 | ❌ MISSING |
+| `bash.exe -lc '<cmd>'`（Claude env `BASH_ENV=<init>`，或命令前缀 `BASH_ENV="<init>"`） | ✅ 生效 | ✅ `/c/Program Files/Git/usr/bin/*.exe` |
+| `bash.exe -ic '...'` / `--rcfile ... -i -c`（无 BASH_ENV） | ❌ 不生效 | ❌ MISSING |
+| `niu.exe -c '<cmd>'`（Niubash 官方命令模式，无 BASH_ENV） | ❌ 不生效 | ❌ MISSING |
+| `niu.exe -C '<cmd>'`（REPL 模式，.niubashrc 单行 source） | ✅ 生效 | ✅ awk/perl/gzip/tar/sed 全 OK |
 
-根因：`~/.niubashrc` 是 Niubash 的**交互式 rc**，只在 REPL/交互会话加载；工具通过
-`bash -lc` 调用时不加载，故 `win-bash-git-inherit-v3` 继承块不执行
-（实测 `__wb_git_root` 保持 unset）。`git` 能用只因 `C:\Program Files\Git\cmd`
-本就在 Windows PATH 里，与继承块无关。`[known-limitation]`：Codex/工具驱动路径下
-Niubash 不含 awk/perl/gzip 等 Git Bash 专属命令；如命令自身带
-`export PATH="$PATH:<git dirs>"; ` 前缀（见 SKILL fallback 示例）则仍可用。
-当前按用户决定：**不改行为**，仅记录此限制。
+本机实证（2026-10-03，win-bash-ai 0.5.0）：
+- 无 `BASH_ENV`：`bash -lc 'command -v awk.exe'` → `NO_AWK`；
+- 设 `BASH_ENV=<共享 init>`：同命令 → `/c/Program Files/Git/usr/bin/awk.exe`；
+- 共享 init 连续 source 多次，Git dirs 只 append 一次（`case ":$PATH:"` 守卫，幂等）。
 
----
+**Codex（工具驱动）**：Codex 宿主丢弃 `updatedInput.shell` 且不改宿主 env，因此
+工具驱动的 `bash -lc` 默认**不**加载共享 init；需要 Git Bash 专属命令时按 SKILL /
+AGENTS.md `USER:SHELL` 指引在命令前加 `BASH_ENV="<共享 init>"` 前缀（见第 2 节与
+SKILL "Required invocation" 示例）。SessionStart 会在共享 init 缺失时提示运行
+`win-bash doctor` 或重装。
+
+**OpenCode**：顶层 config 无 `env` 键（schema 实证），本次**不做** BASH_ENV 注入；
+工具驱动路径仍不加载共享 init，`[known-limitation]` 保持（第 5 节）。
 
 ## 4. Claude Code 全链路
 
 **安装**（`src/claude.js`）：
 1. `resolveShellForInstall()` 解析 Niubash（缺失则安装）；拿不到 Niubash 时回退 Git Bash → pwsh；
-2. `applyClaudeEnv()`：把 `CLAUDE_CODE_GIT_BASH_PATH` 与 `CLAUDE_CODE_SHELL` 并入
-   `~/.claude/settings.json` 的 `env`（写前备份 `settings.json.bak-win-bash-*`）；
+2. `applyClaudeEnv()`：把 `CLAUDE_CODE_GIT_BASH_PATH`、`CLAUDE_CODE_SHELL`
+   与 `BASH_ENV=<共享 init 的 POSIX 路径>` 并入 `~/.claude/settings.json` 的 `env`
+   （写前备份 `settings.json.bak-win-bash-*`）；`BASH_ENV` 必须是 POSIX 路径
+   （如 `/c/Users/.../git-inherit.sh`），反斜杠会被 bash 当转义吞掉；
 3. 安装 skill 到 `~/.claude/skills/win-bash`；
 4. `markPlatform('claude', bashPath)` 记录，供卸载精确定位。
 
@@ -135,12 +147,12 @@ Niubash 不含 awk/perl/gzip 等 Git Bash 专属命令；如命令自身带
 **skill 内容**（`plugin/claude/skills/win-bash/SKILL.md`）：指引 Claude Code 正常跑
 命令、用 `$BASH_VERSION` 校验、不替换为 Git Bash/WSL/bare bash；说明静态 fallback。
 
-**继承 Git 命令**：与第 3 节同因——仅当 Claude Code 以 REPL/交互方式加载
-`~/.niubashrc` 时才继承；以 `bash -lc` 驱动时不继承。`[known-limitation]`。
-实测（2026-10-03，`<niu> bash.exe -lc`）：awk/perl/gzip MISSING；sed/grep 来自
-Niubash 自带 `winuxcmd/usr/bin`（非 Git 继承）；git 来自 Windows PATH 的
-`C:\Program Files\Git\cmd`；tar 解析到 `C:\Windows\system32\tar.exe`（Windows bsdtar，
-选项语义与 GNU tar 不同）。
+**继承 Git 命令（0.5.0 起）**：`BASH_ENV` 指向共享 init，Claude Code 以
+`bash -lc` 驱动命令时 bash 会加载它，从而继承 Git Bash 命令（awk/gzip/perl → Git
+usr/bin）。install/doctor 先确保共享 init 存在再写 env（F3 顺序）；doctor 在 init
+缺失时自愈补写、在 env 缺 `BASH_ENV` 时补写。实测（2026-10-03，win-bash-ai 0.5.0）：
+Claude settings.json env 含 `BASH_ENV=/c/Users/.../git-inherit.sh`，`bash -lc 'awk
+--version'` → Git usr/bin。
 
 ---
 
@@ -171,7 +183,7 @@ Niubash 自带 `winuxcmd/usr/bin`（非 Git 继承）；git 来自 Windows PATH 
 | updatedInput.shell 是否被采纳 | ❌ 宿主丢弃 | 不适用（非 hook） | 不适用（非 hook） |
 | 命令前缀注入 | 仅 `route` 诊断输出，不进 PRE | 不适用 | 不适用 |
 | escape hatches | `WIN_BASH_SKIP` / `WIN_BASH_SHELL` | 无 | 无 |
-| Git 命令继承 | 交互/REPL 下是；工具驱动否 `[known-limitation]` | 同左 | 同左 |
+| Git 命令继承 | 交互/REPL 是；工具驱动需显式 `BASH_ENV="<init>"` 前缀 | 是（settings env `BASH_ENV` 指向共享 init，工具驱动也继承） | 交互/REPL 是；工具驱动否 `[known-limitation]`（无 env 键） |
 | 兜底 shell | Niubash → Git Bash → pwsh | 同左（安装时静态写入） | 同左（安装时静态写入） |
 
 ---

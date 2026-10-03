@@ -287,7 +287,7 @@ function configure() {
 // Any occurrence of these Windows-native programs keeps the host PowerShell:
 // psmux/pmux/tmux must never run inside a Bash environment (they mis-detect a
 // Unix-like host and emit POSIX commands that break pwsh panes).
-const WINDOWS_NATIVE_WORDS = ['psmux', 'pmux', 'tmux', 'powershell', 'pwsh'];
+const WINDOWS_NATIVE_WORDS = ['psmux', 'pmux', 'tmux', 'powershell', 'pwsh', 'opencode'];
 
 // First-token commands that must stay on the host PowerShell: cmd.exe builtins
 // that have no standalone .exe (Niubash/bash would fail or behave differently).
@@ -488,6 +488,17 @@ function buildGitPathPrefix() {
 // standard Git Bash commands (awk/gzip/perl/tar/sed/...). When no Niubash is
 // installed, Git Bash is the fallback, then PowerShell 7 (pwsh) as the
 // last-resort fallback.
+// Resolve the primary shell from config.
+function resolvePrimaryShell() {
+  const config = readConfig();
+  const shell = (typeof config.shell === 'string' && isFile(config.shell)) ? config.shell : null;
+  if (!shell) return { shell: null, kind: null };
+  const name = path.basename(shell).replace(/\.exe$/i, '').toLowerCase();
+  if (name === 'pwsh' || name === 'powershell') return { shell, kind: 'pwsh' };
+  if (/winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(shell)) return { shell, kind: 'niubash' };
+  return { shell, kind: 'gitbash' };
+}
+
 function decide(input) {
   const original = typeof input.command === 'string' ? input.command : (typeof input.cmd === 'string' ? input.cmd : '');
   const markers = parseEscapeHatches(original);
@@ -496,6 +507,15 @@ function decide(input) {
   if (input.shell) return { action: 'respect', shell: null, cmd: original };
   const kind = classify(markers.cmd);
   if (kind === 'niubash') {
+    const noPrimary = process.env.WIN_BASH_NO_PRIMARY === '1';
+    const primary = noPrimary ? { shell: null, kind: null } : resolvePrimaryShell();
+    if (primary.shell && primary.kind === 'pwsh') {
+      return { action: 'none', shell: null, cmd: markers.cmd };
+    }
+    if (primary.shell) {
+      const shell = (primary.kind === 'niubash' && bareBashIsNiubash()) ? 'bash' : primary.shell;
+      return { action: 'niubash', shell, cmd: markers.cmd };
+    }
     const niubash = resolveBash();
     if (niubash) {
       const gitBash = resolveGitBash();
@@ -557,7 +577,27 @@ async function main() {
     if (!result.ok && !resolveGitBash() && !resolvePwsh()) {
       warnings.push('win-bash found neither Niubash, Git Bash, nor PowerShell 7 (pwsh), the last-resort fallback shell. Install PowerShell 7 with "winget install Microsoft.PowerShell" or from https://github.com/PowerShell/PowerShell/releases, then restart the session.');
     }
-    if (warnings.length) emitContext('SessionStart', warnings.join('\n'));
+    const primary = resolvePrimaryShell();
+    const parts = [];
+    if (result.ok && primary.kind === 'pwsh') {
+      // Primary shell is pwsh - Codex already defaults to it.
+    } else if (result.ok && result.shell) {
+      const bareHint = primary.kind === 'niubash' ? ' (or shell="bash" when bare bash resolves to this same Niubash)' : '';
+      parts.push(`win-bash shell policy: for every exec_command call, pass shell="${result.shell}" explicitly${bareHint}. Commands that must stay on the host PowerShell (tmux/psmux/pmux/powershell/pwsh, cmd builtins, .ps1/.bat/.cmd, opencode) should omit shell or use WIN_BASH_SKIP=1.`);
+    }
+    if (!result.ok) {
+      parts.push(`win-bash could not find a Niubash Bash, so shell commands cannot route to it. Install Niubash (run "win-bash bash install") or set WIN_BASH_PATH. Config: ${CONFIG_PATH}`);
+    }
+    if (!fs.existsSync(path.join(os.homedir(), '.config', 'win-bash', 'git-inherit.sh'))) {
+      parts.push(`win-bash shared Git-inherit init is missing (${GIT_INHERIT_INIT_PATH}); run "win-bash doctor" or reinstall win-bash.`);
+    }
+    if (!resolveGitBash()) {
+      parts.push('win-bash routes shell work to the Niubash Bash, but no Git for Windows (Git Bash) was found, so Niubash cannot inherit awk/gzip/perl/tar/sed. Install Git for Windows from https://git-scm.com/downloads and restart the session; the hook picks it up automatically.');
+    }
+    if (!result.ok && !resolveGitBash() && !resolvePwsh()) {
+      parts.push('win-bash found neither Niubash, Git Bash, nor PowerShell 7 (pwsh), the last-resort fallback shell. Install PowerShell 7 with "winget install Microsoft.PowerShell" or from https://github.com/PowerShell/PowerShell/releases, then restart the session.');
+    }
+    if (parts.length) emitContext('SessionStart', parts.join('\n'));
     return;
   }
 

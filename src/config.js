@@ -7,6 +7,8 @@ import {
   getClaudeWinBashIntermediateConfigPath,
   getLegacyOpencodeWinBashConfigPath,
   getOpencodeWinBashIntermediateConfigPath,
+  getClaudeSettingsPath,
+  getOpencodeConfigPath,
 } from './paths.js';
 
 function readJson(filePath) {
@@ -20,6 +22,7 @@ function readJson(filePath) {
 function writeConfig(config) {
   fs.mkdirSync(path.dirname(getWinBashConfigPath()), { recursive: true });
   fs.writeFileSync(getWinBashConfigPath(), `${JSON.stringify(config, null, 2)}\n`);
+  if (config.shell) syncShellToPlatforms(config.shell);
 }
 
 // All per-platform legacy/intermediate locations that must be absorbed into the
@@ -105,4 +108,35 @@ export function getPlatformMarker(platform) {
   const config = readConfig();
   if (!config.platforms[platform]) return null;
   return { shell: config.shell, installedAt: config.installedAt, installed: true };
+}
+
+/** Sync the primary shell to Claude (CLAUDE_CODE_SHELL) and OpenCode (shell) configs. */
+export function syncShellToPlatforms(bashPath) {
+  const results = [];
+  // Claude
+  try {
+    const settingsPath = getClaudeSettingsPath();
+    if (fs.existsSync(settingsPath)) {
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      if (settings.env && settings.env.CLAUDE_CODE_SHELL && settings.env.CLAUDE_CODE_SHELL !== bashPath) {
+        settings.env.CLAUDE_CODE_SHELL = bashPath;
+        settings.env.CLAUDE_CODE_GIT_BASH_PATH = bashPath;
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + String.fromCharCode(10));
+        results.push({ platform: 'claude', updated: true });
+      }
+    }
+  } catch {}
+  // OpenCode
+  try {
+    const configPath = getOpencodeConfigPath();
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (config.shell && config.shell !== bashPath) {
+        config.shell = bashPath;
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + String.fromCharCode(10));
+        results.push({ platform: 'opencode', updated: true });
+      }
+    }
+  } catch {}
+  return results;
 }

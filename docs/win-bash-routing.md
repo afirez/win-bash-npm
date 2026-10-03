@@ -4,10 +4,12 @@
 > **Route vs PreToolUse 注入区分（2026-10-03 起权威说明见
 > `docs/win-bash-injection-chain.md`）**：本文件的 `route` 子命令输出描述的是
 > `decide()` 纯函数（诊断/测试用），其 `cmd` 确实带 `export PATH="..."; ` 前缀。
-> 但当前 0.1.6 的 PreToolUse 注入**只写 `updatedInput.shell`、command 原样保留**，
+> 但当前 0.1.7 的 PreToolUse 注入**只写 `updatedInput.shell`、command 原样保留**，
 > 前缀不会进入 `updatedInput.command`；且 Codex 宿主丢弃 `updatedInput.shell`。
-> "Niubash 继承 Git Bash 命令" 仅在交互/REPL 会话成立，工具驱动 `bash -lc`
-> 路径下 `awk`/`perl`/`gzip` 不可用（known limitation，本次不改行为）。
+> "Niubash 继承 Git Bash 命令" 自 0.5.0 起由共享 init `~/.config/win-bash/git-inherit.sh`
+> 统一提供：交互/REPL 经 `~/.niubashrc` 单行 source，Claude 经 env `BASH_ENV`，
+> Codex 工具驱动路径需显式 `BASH_ENV="<init>"` 前缀（见
+> `docs/win-bash-injection-chain.md` 第 3 节）。
 
 Task: route Codex `exec_command` through the Niubash Bash so every bash/POSIX
 command and shell script runs there, while Niubash inherits standard Git Bash
@@ -125,9 +127,11 @@ in `src/niubash.js` and the hook resolvers all prefer the recorded
 The former "git-only" divert (routing `awk`/`perl`/`gzip`/`bzip2`/`unzip`/
 `dash` to pwsh when no Git Bash was resolvable) is **removed**: those commands
 now route through the main shell chain like everything else. Niubash inherits
-Git commands via `~/.niubashrc` v3 + the per-command Git PATH prefix; when no
-Git Bash exists and Niubash lacks the tool, the command simply fails with
-command-not-found instead of being silently rerouted.
+Git commands via the shared init `~/.config/win-bash/git-inherit.sh`
+(`~/.niubashrc` sources it one line; Claude env `BASH_ENV` points at it for
+tool-driven `bash -lc`; Codex tool-driven needs an explicit `BASH_ENV="<init>"`
+prefix). When no Git Bash exists and Niubash lacks the tool, the command simply
+fails with command-not-found instead of being silently rerouted.
 
 ## Claude Code / OpenCode (static, hook-less fallback)
 
@@ -155,7 +159,7 @@ restoring Niubash switches the static config back.
 ## Reinstall
 
 `node bin/win-bash.js install --target codex` -> syncs plugin/codex into the
-local marketplace and re-caches `win-bash/0.1.6`. Session restart required for
+local marketplace and re-caches `win-bash/0.1.7`. Session restart required for
 the hook to load.
 
 ## Evidence (2026-10-03, Plan B)
@@ -173,7 +177,7 @@ the hook to load.
     `ping -n 1 ...`, `netstat -ano`, `cmd /c echo x`, `grep tmux notes.md` ->
     `action=niubash` with Niubash shell + Git PATH prefix
 - Three-platform acceptance (2026-10-03): `install --target all` succeeded on
-  Codex (plugin 0.1.6 enabled), Claude Code (2.1.220) and OpenCode (1.18.34);
+  Codex (plugin 0.1.7 enabled), Claude Code (2.1.220) and OpenCode (1.18.34);
   `doctor --target all` reported the Niubash shell with Git Bash and pwsh both
   resolvable on all three; hook `route` confirmed `grep`/`./build.sh` -> Niubash
   + Git PATH prefix, `tmux ls`/`Get-ChildItem` -> `none`, `WIN_BASH_SKIP=1` ->

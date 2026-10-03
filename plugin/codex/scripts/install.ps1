@@ -76,6 +76,28 @@ if (-not $resolved) {
     throw "No Bash executable found. Pass -BashPath, -InstallerPath, or -DownloadUrl. Current config: $config"
 }
 
+# F3 order: create/refresh the shared Git-inherit init BEFORE the rc write below
+# references it. Idempotent: an identical existing file is left untouched; the
+# hook (SessionStart) never writes this file, so install is the owner.
+$init = Join-Path $configDir 'git-inherit.sh'
+$bundledInit = Join-Path $PSScriptRoot 'git-inherit.sh'
+if (Test-Path -LiteralPath $bundledInit -PathType Leaf) {
+    if (-not (Test-Path -LiteralPath $init -PathType Leaf)) {
+        New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+        Copy-Item -LiteralPath $bundledInit -Destination $init -Force
+        Write-Host "Created shared Git-inherit init: $init"
+    } else {
+        $existing = Get-Content -LiteralPath $init -Raw
+        $bundled = Get-Content -LiteralPath $bundledInit -Raw
+        if ($existing.Trim() -ne $bundled.Trim()) {
+            Copy-Item -LiteralPath $bundledInit -Destination $init -Force
+            Write-Host "Updated shared Git-inherit init: $init"
+        }
+    }
+} else {
+    Write-Host "Bundled git-inherit.sh not found next to install.ps1: $bundledInit"
+}
+
 if (-not $SkipConfig) {
 
     $env:WIN_BASH_PATH = $resolved
@@ -86,7 +108,9 @@ if (-not $SkipConfig) {
     } elseif ($cfg.rc_result.reason -eq 'legacy-exists') {
         Write-Host "Legacy config detected; preserved $legacyRc and did not create $rc"
     } elseif ($cfg.rc_result.reason -eq 'git-inherit-appended') {
-        Write-Host "Appended Git command inheritance to existing Niubash config: $rc"
+        Write-Host "Appended Git-inherit source line to existing Niubash config: $rc"
+    } elseif ($cfg.rc_result.reason -eq 'git-inherit-upgraded') {
+        Write-Host "Replaced old inline Git-inherit blocks with the shared-init source line: $rc"
     } else {
         Write-Host "Existing Niubash config preserved: $rc"
     }

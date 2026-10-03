@@ -12,7 +12,7 @@ function runRoute(input, env = {}) {
   const out = execFileSync(process.execPath, [HOOK, 'route'], {
     input: JSON.stringify(input),
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...process.env, WIN_BASH_NO_PRIMARY: '1', ...env },
   });
   return JSON.parse(out);
 }
@@ -22,7 +22,7 @@ function runPreToolUse(input, env = {}) {
   const out = execFileSync(process.execPath, [HOOK, 'pre-tool-use'], {
     input: JSON.stringify(payload),
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...process.env, WIN_BASH_NO_PRIMARY: '1', ...env },
   }).trim();
   return out ? JSON.parse(out) : null;
 }
@@ -402,7 +402,7 @@ test('hook session-start carries install prompts for missing Git Bash / pwsh', (
   assert.ok(hook.includes('https://git-scm.com/downloads'), 'session-start must point to the Git for Windows install');
   assert.ok(hook.includes('winget install Microsoft.PowerShell'), 'session-start must point to the PowerShell 7 install');
   assert.ok(hook.includes('the last-resort fallback shell'), 'session-start must describe pwsh as the last-resort fallback');
-  assert.ok(hook.includes("emitContext('SessionStart', warnings.join"), 'session-start must emit install warnings only via SessionStart');
+  assert.ok(hook.includes("emitContext('SessionStart', parts.join"), 'session-start must emit install warnings only via SessionStart');
 });
 
 test('hook DEFAULT_RC lets Niubash inherit standard Git Bash commands', () => {

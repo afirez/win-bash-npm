@@ -57,6 +57,18 @@ export function getNiubashRcPath() {
   return path.join(os.homedir(), '.niubashrc');
 }
 
+export function getWinBashGitInheritInitPath() {
+  return path.join(getWinBashConfigDir(), 'git-inherit.sh');
+}
+
+// Convert a Windows path (C:\\\\foo or C:/foo) into the MSYS/POSIX form bash init
+// files accept (/c/foo). Backslashes are otherwise decoded by bash as escapes.
+export function toPosixPath(value) {
+  const drive = String(value).match(/^([A-Za-z]):[\\/](.*)$/);
+  if (!drive) return String(value).replace(/\\/g, '/');
+  return `/${drive[1].toLowerCase()}/${drive[2].replace(/\\/g, '/')}`;
+}
+
 export function getClaudeSettingsPath() {
   return path.join(getClaudeHome(), 'settings.json');
 }
@@ -71,6 +83,10 @@ export function getLegacyClaudeWinBashConfigPath() {
 
 export function getClaudeSkillRoot() {
   return path.join(getClaudeHome(), 'skills', 'win-bash');
+}
+
+export function getClaudeMdPath() {
+  return path.join(getClaudeHome(), 'CLAUDE.md');
 }
 
 export function getBundledClaudeSkillRoot() {
@@ -95,6 +111,10 @@ export function getOpencodeWinBashIntermediateConfigPath() {
 
 export function getLegacyOpencodeWinBashConfigPath() {
   return path.join(getOpencodeHome(), 'win-bash.json');
+}
+
+export function getOpencodeAgentsMdPath() {
+  return path.join(getOpencodeHome(), 'AGENTS.md');
 }
 
 export function getBundledOpencodeSkillRoot() {

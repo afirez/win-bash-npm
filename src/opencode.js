@@ -3,6 +3,7 @@ import path from 'node:path';
 import { commandExists, run } from './process.js';
 import { resolveShellForInstall } from './niubash.js';
 import { markPlatform, getPlatformMarker, unmarkPlatform } from './config.js';
+import { ensureOpencodeUserShellPolicy, removeOpencodeUserShellPolicy } from './user-shell-policy.js';
 import {
   getBundledOpencodeSkillRoot,
   getOpencodeConfigPath,
@@ -46,6 +47,7 @@ export function installOpencode() {
   const bashPath = resolveShellForInstall();
   writeConfig(applyOpencodeConfig(readJson(getOpencodeConfigPath(), {}), bashPath));
   installSkill();
+  ensureOpencodeUserShellPolicy();
   markPlatform('opencode', bashPath);
 
   console.log(`opencode configured for: ${bashPath}`);
@@ -57,6 +59,8 @@ export function doctorOpencode() {
   if (!commandExists('opencode')) throw new Error('opencode CLI not found in PATH');
 
   const config = readJson(getOpencodeConfigPath(), {});
+  ensureOpencodeUserShellPolicy();
+
   console.log(`opencode: ${run('opencode', ['--version'], { capture: true, shell: true }).stdout.trim()}`);
   console.log(`shell config: ${config.shell || 'not set'}`);
   console.log(`OPENCODE_GIT_BASH_PATH: ${process.env.OPENCODE_GIT_BASH_PATH || 'not set'}`);
@@ -71,6 +75,7 @@ export function uninstallOpencode() {
     writeConfig(rest);
   }
 
+  removeOpencodeUserShellPolicy();
   unmarkPlatform('opencode');
   if (fs.existsSync(getLegacyOpencodeWinBashConfigPath())) fs.rmSync(getLegacyOpencodeWinBashConfigPath(), { force: true });
   const skillRoot = path.resolve(getOpencodeSkillRoot());
