@@ -17,6 +17,16 @@ function runRoute(input, env = {}) {
   return JSON.parse(out);
 }
 
+function runPreToolUse(input, env = {}) {
+  const payload = { hook_event_name: 'PreToolUse', tool_name: 'exec_command', tool_input: input };
+  const out = execFileSync(process.execPath, [HOOK, 'pre-tool-use'], {
+    input: JSON.stringify(payload),
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  }).trim();
+  return out ? JSON.parse(out) : null;
+}
+
 function fakeBashFile(label) {
   return path.join(os.tmpdir(), `win-bash-${label}-${process.pid}-bash.exe`);
 }
@@ -76,7 +86,7 @@ test('route: POSIX text tools, git and chained commands route to Niubash with a 
     for (const cmd of cmds) {
       const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
       assert.equal(r.action, 'niubash', cmd);
-      assert.equal(r.shell, niubash, cmd);
+      assert.equal(r.shell, 'bash', cmd);
       assert.equal(r.cmd, gitPathPrefix(gitBash) + cmd, cmd);
     }
   } finally {
@@ -95,7 +105,7 @@ test('route: shell scripts route to Niubash with a Git PATH prefix', () => {
     for (const cmd of cmds) {
       const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
       assert.equal(r.action, 'niubash', cmd);
-      assert.equal(r.shell, niubash, cmd);
+      assert.equal(r.shell, 'bash', cmd);
       assert.equal(r.cmd, gitPathPrefix(gitBash) + cmd, cmd);
     }
   } finally {
@@ -158,7 +168,7 @@ test('route: node/npm/npx, Windows exes and cmd /c route to Niubash by default w
     for (const cmd of cmds) {
       const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
       assert.equal(r.action, 'niubash', cmd);
-      assert.equal(r.shell, niubash, cmd);
+      assert.equal(r.shell, 'bash', cmd);
       assert.equal(r.cmd, gitPathPrefix(gitBash) + cmd, cmd);
     }
   } finally {
@@ -182,7 +192,7 @@ test('route: tmux or powershell mentioned as an argument still routes to Niubash
     for (const cmd of cmds) {
       const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
       assert.equal(r.action, 'niubash', cmd);
-      assert.equal(r.shell, niubash, cmd);
+      assert.equal(r.shell, 'bash', cmd);
     }
   } finally {
     fs.rmSync(niubash, { force: true });
@@ -248,7 +258,7 @@ test('route: a Niubash-valued OMO_CODEX_GIT_BASH_PATH override never leaks into 
   try {
     const r = runRoute({ cmd: 'grep foo' }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: fakeWinux });
     assert.equal(r.action, 'niubash');
-    assert.equal(r.shell, niubash, 'Niubash stays the routed shell');
+    assert.equal(r.shell, 'bash', 'Niubash stays the routed shell');
     assert.equal(r.cmd.toLowerCase().includes('winuxcmd'), false, 'injected Git PATH must never contain the Niubash winuxcmd dir');
     if (r.cmd.startsWith('export PATH="')) {
       assert.equal(r.cmd.includes(toPosixPath(path.dirname(path.dirname(fakeWinux)))), false);
@@ -267,7 +277,7 @@ test('route: bash command execution routes to Niubash', () => {
     for (const cmd of cmds) {
       const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash });
       assert.equal(r.action, 'niubash', cmd);
-      assert.equal(r.shell, niubash, cmd);
+      assert.equal(r.shell, 'bash', cmd);
     }
   } finally {
     fs.rmSync(niubash, { force: true });
@@ -284,7 +294,7 @@ test('route: bash running a .sh script or using awk routes to Niubash, inheritin
     for (const cmd of cmds) {
       const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
       assert.equal(r.action, 'niubash', cmd);
-      assert.equal(r.shell, niubash, cmd);
+      assert.equal(r.shell, 'bash', cmd);
       assert.equal(r.cmd, gitPathPrefix(gitBash) + cmd, cmd);
     }
   } finally {
@@ -301,7 +311,7 @@ test('route: Niubash PATH prefix appends Git dirs so inner bash stays Niubash', 
   try {
     const r = runRoute({ cmd: 'bash script.sh' }, { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash });
     assert.equal(r.action, 'niubash');
-    assert.equal(r.shell, niubash);
+    assert.equal(r.shell, 'bash');
     assert.ok(r.cmd.startsWith('export PATH="$PATH:'), 'Git dirs must be appended AFTER the existing PATH');
     assert.ok(r.cmd.endsWith('"; bash script.sh'), 'original command must follow the PATH prefix');
     assert.equal(r.cmd.includes('/usr/bin:'), true);
@@ -309,6 +319,55 @@ test('route: Niubash PATH prefix appends Git dirs so inner bash stays Niubash', 
     fs.rmSync(niubash, { force: true });
     fs.rmSync(gitBash, { force: true });
   }
+});
+
+test('route: git-only tools route to Niubash via the main shell chain when no Git Bash is available', () => {
+  const niubash = fakeBashFile('niu');
+  fs.writeFileSync(niubash, '');
+  try {
+    const gitOnly = [
+      "awk '{print $1}'",
+      'perl -e "print 1"',
+      'gzip -c x > y.gz',
+      'bzip2 x',
+      'unzip a.zip',
+      'dash -c "echo hi"',
+      "echo x | awk '{print $1}'",
+      'cat a | gzip > b.gz',
+    ];
+    for (const cmd of gitOnly) {
+      // The git-only divert is removed: the main shell chain (Niubash -> Git
+      // Bash -> pwsh) routes these to the Niubash Bash. Without a resolvable
+      // Git Bash there is no PATH prefix, so the command is left unchanged.
+      const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, WIN_BASH_NO_GIT: '1' });
+      assert.equal(r.action, 'niubash', cmd + ' must route to Niubash (main shell chain)');
+      assert.equal(r.shell, 'bash', cmd);
+      assert.equal(r.cmd, cmd, cmd + ' must be left unchanged when no Git prefix applies');
+    }
+  } finally {
+    fs.rmSync(niubash, { force: true });
+  }
+});
+
+test('route: coreutils still route to Niubash when no Git Bash is available', () => {
+  const niubash = fakeBashFile('niu');
+  fs.writeFileSync(niubash, '');
+  try {
+    const coreutils = ['grep foo', 'sed -n 1p x', 'ls -la', 'find . -name x', 'cat a.txt', 'mkdir -p d'];
+    for (const cmd of coreutils) {
+      const r = runRoute({ cmd }, { WIN_BASH_PATH: niubash, WIN_BASH_NO_GIT: '1' });
+      assert.equal(r.action, 'niubash', cmd);
+      assert.equal(r.shell, 'bash', cmd);
+      assert.equal(r.cmd, cmd, cmd + ' must be left unchanged when no Git prefix applies');
+    }
+  } finally {
+    fs.rmSync(niubash, { force: true });
+  }
+});
+
+test('hook has a WIN_BASH_NO_GIT escape hatch for simulating a Git-less host', () => {
+  const hook = fs.readFileSync(path.join(getBundledPluginRoot(), 'scripts', 'win-bash-hook.js'), 'utf8');
+  assert.ok(hook.includes("process.env.WIN_BASH_NO_GIT === '1'"), 'hook must support WIN_BASH_NO_GIT to simulate a Git-less host');
 });
 
 test('hook uses PowerShell 7 (pwsh) as the last-resort fallback shell', () => {
@@ -350,10 +409,62 @@ test('hook DEFAULT_RC lets Niubash inherit standard Git Bash commands', () => {
   const hook = fs.readFileSync(path.join(getBundledPluginRoot(), 'scripts', 'win-bash-hook.js'), 'utf8');
   assert.ok(hook.includes('__wb_git_root'), 'rc must self-detect a Git for Windows install');
   assert.ok(hook.includes('usr/bin/awk.exe'), 'rc must probe for a Git command (awk)');
-  assert.ok(hook.includes('export PATH="'), 'rc must prepend the Git dirs onto PATH');
-  assert.ok(hook.includes('win-bash-git-inherit-v2'), 'rc must carry the v2 dynamic-discovery marker');
+  assert.ok(hook.includes('export PATH="$PATH:$__wb_git_root/usr/bin'), 'rc must append the Git dirs AFTER the existing PATH');
+  assert.ok(hook.includes('win-bash-git-inherit-v3'), 'rc must carry the v3 dynamic-discovery marker');
   assert.ok(hook.includes('command -v git.exe'), 'rc must discover Git dynamically from PATH');
   assert.equal(hook.includes('PROGRAMFILES/Git'), false, 'rc must not hardcode a Git install root');
+});
+
+test('hook ensureDefaultRc upgrades an old v2 prepend block to the v3 append form', () => {
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-rc-upgrade-'));
+  const fakeBash = path.join(fakeHome, 'bash.exe');
+  fs.writeFileSync(fakeBash, '');
+  const rcPath = path.join(fakeHome, '.niubashrc');
+  // Simulate a pre-upgrade rc with the v2 dynamic-discovery block (prepend).
+  const oldBlock = [
+    '# win-bash: inherit standard Git Bash commands (awk/gzip/perl/tar/sed/...)',
+    '# win-bash-git-inherit-v2: discover Git dynamically from git on PATH (no hardcoded roots).',
+    '__wb_git_root=""',
+    '__wb_git="$(command -v git.exe 2>/dev/null || command -v git 2>/dev/null || true)"',
+    'if [ -n "$__wb_git" ]; then',
+    '  __wb_root="$(dirname "$(dirname "$__wb_git")")"',
+    'fi',
+    'if [ -n "$__wb_git_root" ]; then',
+    '  case ":$PATH:" in',
+    '    *":$__wb_git_root/usr/bin:"*) ;;',
+    '    *) export PATH="$__wb_git_root/usr/bin:$__wb_git_root/bin:$__wb_git_root/cmd:$PATH" ;;',
+    '  esac',
+    'fi',
+    'unset __wb_git_root __wb_root __wb_git',
+  ].join('\n');
+  const userContent = "# user content preserved\nalias ll='ls -la'\n\n" + oldBlock + "\n";
+  fs.writeFileSync(rcPath, userContent, 'utf8');
+  try {
+    const out = execFileSync(process.execPath, [HOOK, 'configure'], {
+      encoding: 'utf8',
+      env: { ...process.env, USERPROFILE: fakeHome, WIN_BASH_PATH: fakeBash },
+    });
+    const result = JSON.parse(out);
+    assert.ok(result.ok, 'configure must succeed with a Niubash bash');
+    assert.equal(result.rc_result.reason, 'git-inherit-upgraded', 'old v2 block must be upgraded, not duplicated');
+    const upgraded = fs.readFileSync(rcPath, 'utf8');
+    assert.ok(upgraded.includes('win-bash-git-inherit-v3'), 'rc must carry the v3 marker after upgrade');
+    assert.equal(upgraded.includes('win-bash-git-inherit-v2'), false, 'rc must not retain the v2 marker');
+    assert.ok(upgraded.includes('export PATH="$PATH:$__wb_git_root/usr/bin'), 'rc must append the Git dirs after the existing PATH');
+    assert.equal(upgraded.includes('export PATH="$__wb_git_root/usr/bin:$__wb_git_root/bin:$__wb_git_root/cmd:$PATH"'), false, 'old prepend form must be gone');
+    assert.ok(upgraded.includes("alias ll='ls -la'"), 'user content outside the block must be preserved');
+    // Idempotency: running again must not duplicate the block.
+    const out2 = execFileSync(process.execPath, [HOOK, 'configure'], {
+      encoding: 'utf8',
+      env: { ...process.env, USERPROFILE: fakeHome, WIN_BASH_PATH: fakeBash },
+    });
+    const result2 = JSON.parse(out2);
+    assert.equal(result2.rc_result.reason, 'exists', 'second configure must report exists (idempotent)');
+    const rcAgain = fs.readFileSync(rcPath, 'utf8');
+    assert.equal((rcAgain.match(/win-bash-git-inherit-v3/g) || []).length, 1, 'v3 block must not be duplicated');
+  } finally {
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
 });
 
 test('hook resolves Git Bash dynamically with common install roots as a last-resort fallback', () => {
@@ -368,4 +479,156 @@ test('hook resolves Git Bash dynamically with common install roots as a last-res
   const dyn = hook.indexOf('whereGitRoots');
   const fallback = hook.indexOf('GIT_FALLBACK_ROOTS');
   assert.ok(dyn !== -1 && fallback !== -1 && dyn < fallback, 'dynamic discovery must run before the fallback roots');
+});
+
+
+test('route: bare bash not on PATH falls back to the absolute Niubash path', () => {
+  const niubash = fakeBashFile('niu');
+  fs.writeFileSync(niubash, '');
+  try {
+    const r = runRoute({ cmd: 'grep foo' }, { WIN_BASH_PATH: niubash, PATH: 'C:\\Windows\\System32' });
+    assert.equal(r.action, 'niubash');
+    assert.equal(r.shell, niubash, 'absolute Niubash path must be injected when bare bash is not Niubash');
+  } finally {
+    fs.rmSync(niubash, { force: true });
+  }
+});
+
+test('hook injects shell via updatedInput.shell (no command-wrap, no additionalContext)', () => {
+  const hook = fs.readFileSync(path.join(getBundledPluginRoot(), 'scripts', 'win-bash-hook.js'), 'utf8');
+  assert.ok(hook.includes('bareBashIsNiubash'), 'hook must detect when bare bash resolves to Niubash');
+  assert.ok(hook.includes("const shell = bareBashIsNiubash() ? 'bash' : niubash;"), 'hook must use bare bash when resolvable, else the absolute path');
+  assert.equal(hook.includes('wrapInBashInvocation'), false, 'command-wrap helper must be removed');
+  assert.equal(hook.includes('& ${token} -lc'), false, 'no PowerShell &-call wrapping');
+  assert.ok(hook.includes('newInput.shell = decision.shell'), 'hook must inject via updatedInput.shell');
+});
+
+test('PreToolUse rewrites updatedInput.shell only (POSIX -> Bash, native -> none, hatches honored)', () => {
+  const niubash = fakeBashFile('niu');
+  const gitBash = fakeBashFile('git');
+  fs.writeFileSync(niubash, '');
+  fs.writeFileSync(gitBash, '');
+  try {
+    const env = { WIN_BASH_PATH: niubash, OMO_CODEX_GIT_BASH_PATH: gitBash, PATH: 'C:\\Windows\\System32' };
+
+    // POSIX command -> updatedInput.shell set, command unchanged, no & wrap, no additionalContext
+    const r = runPreToolUse({ command: 'git status' }, env);
+    assert.ok(r, 'POSIX command must produce a rewrite');
+    const out = r.hookSpecificOutput;
+    assert.equal(out.hookEventName, 'PreToolUse');
+    assert.equal(out.permissionDecision, 'allow');
+    assert.equal(out.updatedInput.shell, niubash, 'updatedInput.shell must carry the resolved Bash');
+    assert.equal(out.updatedInput.command, 'git status', 'command must stay unchanged; only updatedInput.shell is injected');
+    assert.ok(!out.updatedInput.command.startsWith('& '), 'command must NOT be wrapped in a PowerShell & call');
+    assert.ok(!('additionalContext' in out), 'PreToolUse must not inject additionalContext');
+
+    // native command -> no rewrite
+    assert.equal(runPreToolUse({ command: 'tmux ls' }, env), null, 'native command must not be rewritten');
+
+    // explicit shell -> respected, no rewrite
+    assert.equal(runPreToolUse({ command: 'echo hi', shell: 'C:/x/pwsh.exe' }, env), null, 'explicit shell must be respected');
+
+    // WIN_BASH_SKIP=1 -> marker stripped, no shell injected
+    const skip = runPreToolUse({ command: 'WIN_BASH_SKIP=1 psmux attach main' }, env);
+    assert.equal(skip.hookSpecificOutput.updatedInput.command, 'psmux attach main');
+    assert.ok(!('shell' in skip.hookSpecificOutput.updatedInput), 'skip must not inject shell');
+
+    // WIN_BASH_SHELL=<path> -> forced shell, marker stripped
+    const force = runPreToolUse({ command: 'WIN_BASH_SHELL="C:/Program Files/Git/bin/bash.exe" ./a.sh' }, env);
+    assert.equal(force.hookSpecificOutput.updatedInput.shell, 'C:/Program Files/Git/bin/bash.exe');
+    assert.equal(force.hookSpecificOutput.updatedInput.command, './a.sh');
+    assert.ok(!('additionalContext' in force.hookSpecificOutput), 'force must not inject additionalContext');
+  } finally {
+    fs.rmSync(niubash, { force: true });
+    fs.rmSync(gitBash, { force: true });
+  }
+});
+
+test('route: a manual config.shell override wins as the main shell', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-chain-'));
+  const manualShell = path.join(home, 'manual-bash.exe');
+  fs.writeFileSync(manualShell, '');
+  const cfgDir = path.join(home, '.config', 'win-bash');
+  fs.mkdirSync(cfgDir, { recursive: true });
+  fs.writeFileSync(path.join(cfgDir, 'win-bash.json'), JSON.stringify({ shell: manualShell, platforms: { codex: true } }));
+  try {
+    const r = runRoute({ cmd: 'grep foo' }, {
+      USERPROFILE: home,
+      HOME: home,
+      WIN_BASH_PATH: '',
+      PATH: 'C:\\Windows\\System32',
+    });
+    assert.equal(r.action, 'niubash');
+    assert.equal(r.shell, manualShell, 'manual config.shell must be injected as the main shell');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('route: a recorded config.niubash_path is preferred for Niubash routing', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-niu-'));
+  const niubash = fakeBashFile('niu-cfg');
+  fs.writeFileSync(niubash, '');
+  const cfgDir = path.join(home, '.config', 'win-bash');
+  fs.mkdirSync(cfgDir, { recursive: true });
+  fs.writeFileSync(path.join(cfgDir, 'win-bash.json'), JSON.stringify({ niubash_path: niubash, platforms: { codex: true } }));
+  try {
+    const r = runRoute({ cmd: 'grep foo' }, {
+      USERPROFILE: home,
+      HOME: home,
+      WIN_BASH_PATH: '',
+      PATH: 'C:\\Windows\\System32',
+    });
+    assert.equal(r.action, 'niubash');
+    assert.equal(r.shell, niubash, 'config.niubash_path must be injected');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(niubash, { force: true });
+  }
+});
+
+test('hook configure strategy X: keeps manual shell and valid *_path, no repeated overwrite', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-strategy-'));
+  const manualShell = path.join(home, 'manual-bash.exe');
+  const niubash = fakeBashFile('niu-x');
+  const gitBash = fakeBashFile('git-x');
+  fs.writeFileSync(manualShell, '');
+  fs.writeFileSync(niubash, '');
+  fs.writeFileSync(gitBash, '');
+  const cfgDir = path.join(home, '.config', 'win-bash');
+  fs.mkdirSync(cfgDir, { recursive: true });
+  const cfgPath = path.join(cfgDir, 'win-bash.json');
+  const initial = {
+    shell: manualShell,
+    niubash_path: niubash,
+    gitbash_path: gitBash,
+    pwsh_path: 'C:\\any\\pwsh.exe',
+    platforms: { codex: true },
+  };
+  fs.writeFileSync(cfgPath, JSON.stringify(initial, null, 2) + '\n');
+  const env = { ...process.env, USERPROFILE: home, HOME: home, WIN_BASH_PATH: '', OMO_CODEX_GIT_BASH_PATH: '' };
+  try {
+    const out1 = execFileSync(process.execPath, [HOOK, 'configure'], { encoding: 'utf8', env });
+    const r1 = JSON.parse(out1);
+    assert.ok(r1.ok);
+    assert.equal(r1.shell, manualShell, 'manual shell must be preserved');
+    assert.equal(r1.rc_result.reason, 'created', 'first run creates the rc');
+
+    const before2 = fs.readFileSync(cfgPath, 'utf8');
+    const out2 = execFileSync(process.execPath, [HOOK, 'configure'], { encoding: 'utf8', env });
+    const r2 = JSON.parse(out2);
+    assert.equal(r2.rc_result.reason, 'exists', 'second run reports exists (idempotent)');
+    assert.equal(r2.shell, manualShell, 'manual shell must survive a second run');
+    const after2 = fs.readFileSync(cfgPath, 'utf8');
+    assert.equal(after2, before2, 'config must not be rewritten when everything is already valid');
+    const parsed = JSON.parse(after2);
+    assert.equal(parsed.shell, manualShell);
+    assert.equal(parsed.niubash_path, niubash, 'valid niubash_path must not be overwritten');
+    assert.equal(parsed.gitbash_path, gitBash, 'valid gitbash_path must not be overwritten');
+    assert.equal(parsed.pwsh_path, 'C:\\any\\pwsh.exe', 'valid pwsh_path must not be overwritten');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(niubash, { force: true });
+    fs.rmSync(gitBash, { force: true });
+  }
 });

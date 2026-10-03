@@ -14,8 +14,15 @@ opencode is configured to run its bash tool through Niubash Bash on Windows.
 - The opencode `shell` config key points at the Niubash Bash executable. Niubash is also on PATH, so opencode discovers it automatically.
 - Run shell commands normally through the bash tool; they execute in Niubash Bash (bash 5.x).
 - The Niubash profile (`~/.niubashrc`) configured by `win-bash` inherits standard
-  Git Bash commands (`awk`, `gzip`, `perl`, `tar`, `sed`, ...), so Niubash
-  behaves like a complete POSIX shell for pipelines, scripts, and Git workflows.
+  Git Bash commands (`awk`, `gzip`, `perl`, `tar`, `sed`, ...) in interactive
+  sessions, so Niubash behaves like a complete POSIX shell for pipelines,
+  scripts, and Git workflows.
+- Known limitation: `~/.niubashrc` is Niubash's interactive rc. When a tool
+  runs commands via `bash -lc '<cmd>'`, that rc is not loaded, so `awk`,
+  `perl`, `gzip`, etc. from Git Bash may not be available. If a command needs
+  such tools, prefix it with
+  `export PATH="$PATH:/c/Program Files/Git/usr/bin:/c/Program Files/Git/bin:/c/Program Files/Git/cmd"; `
+  inside the command.
 
 ## Rules
 

@@ -31,3 +31,53 @@ test('resolvePwshPath returns a runnable pwsh path or null', () => {
   const pwsh = resolvePwshPath();
   assert.ok(pwsh === null || pwsh.length > 0, 'pwsh must resolve to a path or null');
 });
+
+import path from 'node:path';
+import { withTempHome } from './helpers.js';
+
+function writeWinBashConfig(home, value) {
+  const cfgPath = path.join(home, '.config', 'win-bash', 'win-bash.json');
+  fs.mkdirSync(path.dirname(cfgPath), { recursive: true });
+  fs.writeFileSync(cfgPath, JSON.stringify(value, null, 2) + '\n');
+}
+
+test('resolveBashPath prefers a valid config.niubash_path', () => {
+  withTempHome((home) => {
+    const fake = path.join(home, 'fake-niubash.exe');
+    fs.writeFileSync(fake, '');
+    writeWinBashConfig(home, { niubash_path: fake });
+    assert.equal(resolveBashPath(), fake, 'config niubash_path must win over dynamic discovery');
+  });
+});
+
+test('resolveBashPath ignores an invalid config.niubash_path and falls back', () => {
+  withTempHome((home) => {
+    const invalid = path.join(home, 'does-not-exist.exe');
+    writeWinBashConfig(home, { niubash_path: invalid });
+    assert.notEqual(resolveBashPath(), invalid, 'invalid config path must be ignored');
+  });
+});
+
+test('resolveGitBashPath prefers a valid config.gitbash_path', () => {
+  withTempHome((home) => {
+    const fake = path.join(home, 'fake-git-bash.exe');
+    fs.writeFileSync(fake, '');
+    writeWinBashConfig(home, { gitbash_path: fake });
+    assert.equal(resolveGitBashPath(), fake, 'config gitbash_path must win');
+  });
+});
+
+test('resolveGitBashPath ignores an invalid config.gitbash_path and falls back', () => {
+  withTempHome((home) => {
+    const invalid = path.join(home, 'does-not-exist.exe');
+    writeWinBashConfig(home, { gitbash_path: invalid });
+    assert.notEqual(resolveGitBashPath(), invalid, 'invalid config gitbash_path must be ignored');
+  });
+});
+
+test('resolvePwshPath prefers a recorded config.pwsh_path', () => {
+  withTempHome((home) => {
+    writeWinBashConfig(home, { pwsh_path: 'C:\\custom\\pwsh.exe' });
+    assert.equal(resolvePwshPath(), 'C:\\custom\\pwsh.exe', 'config pwsh_path must be trusted');
+  });
+});

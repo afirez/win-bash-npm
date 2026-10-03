@@ -72,6 +72,19 @@ export function getShell() {
   return readConfig().shell || null;
 }
 
+// Read the three explicit shell-candidate paths recorded by the hook configure
+// step (strategy X): niubash_path / gitbash_path / pwsh_path. Each is null when
+// absent. readConfig() already round-trips them (writeConfig persists the whole
+// config object), so this is just a typed accessor.
+export function getPaths() {
+  const config = readConfig();
+  return {
+    niubash_path: typeof config.niubash_path === "string" ? config.niubash_path : null,
+    gitbash_path: typeof config.gitbash_path === "string" ? config.gitbash_path : null,
+    pwsh_path: typeof config.pwsh_path === "string" ? config.pwsh_path : null,
+  };
+}
+
 export function markPlatform(platform, bashPath) {
   const config = readConfig();
   config.shell = bashPath;

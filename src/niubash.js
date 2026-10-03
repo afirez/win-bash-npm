@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { runPowerShell } from './process.js';
-import { getShell } from './config.js';
+import { getShell, getPaths } from './config.js';
 import { getBundledPluginRoot } from './paths.js';
 
 const localAppData = process.env.LOCALAPPDATA || '';
@@ -38,9 +38,12 @@ export function isWinuxBashPath(value) {
 }
 
 export function resolveBashPath() {
+  // config.shell (manual main shell) wins, then a recorded niubash_path, then
+  // dynamic discovery. Both config values are only used when they still exist.
   const candidates = [
     process.env.WIN_BASH_PATH,
     configShell(),
+    getPaths().niubash_path,
     'D:\\apps\\Niubash\\winuxcmd\\bin\\bash.exe',
     localAppData ? path.join(localAppData, 'Niubash', 'winuxcmd', 'bin', 'bash.exe') : null,
     ...whereBash().filter(isWinuxBashPath),
@@ -94,6 +97,8 @@ function whereGitRoots() {
 // override, bash.exe on PATH under a Git root, Git for Windows registry, then
 // git.exe on PATH), with the common install roots as a last-resort fallback.
 export function resolveGitBashPath() {
+  const configuredGit = getPaths().gitbash_path;
+  if (configuredGit && isFile(configuredGit) && !isWinuxBashPath(configuredGit)) return configuredGit;
   const candidates = [];
   if (process.env.OMO_CODEX_GIT_BASH_PATH) candidates.push(process.env.OMO_CODEX_GIT_BASH_PATH);
   candidates.push(...whereBash().filter((value) => /git[\\/]bin[\\/]bash\.exe$/i.test(value)));
@@ -113,6 +118,10 @@ export function resolveGitBashPath() {
 // resolution is trusted directly; falls back to the standard Program Files
 // root. Never Windows PowerShell 5.1 (powershell.exe).
 export function resolvePwshPath() {
+  // Trust an explicit config pwsh_path directly (a Microsoft Store alias is a
+  // reparse point isFile() cannot stat, mirroring how where.exe output is used).
+  const configuredPwsh = getPaths().pwsh_path;
+  if (configuredPwsh) return configuredPwsh;
   try {
     const out = execFileSync('where.exe', ['pwsh.exe'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     const fromWhere = String(out).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);

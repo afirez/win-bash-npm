@@ -2,7 +2,7 @@
 
 Windows installer for the `win-bash` integration.
 
-- npm package version: `0.4.0`
+- npm package version: `0.4.2`
 - Codex support: `exec_command.shell` injection through the bundled plugin
 - Claude Code support: official `CLAUDE_CODE_GIT_BASH_PATH` / `CLAUDE_CODE_SHELL` settings plus a `win-bash` skill
 - OpenCode support: `shell` config key plus a `win-bash` skill
@@ -89,21 +89,21 @@ Niubash is installed under `D:\apps\Niubash` when the `D:` drive exists, otherwi
 
 The CLI copies the bundled Codex plugin into a local marketplace, registers it with `codex plugin add`, and runs the plugin installer to resolve or install Niubash Bash.
 
-The PreToolUse hook routes each `exec_command` to the right shell:
+The PreToolUse hook classifies each `exec_command` and, when a Bash shell is
+wanted, writes `updatedInput.shell` (the Niubash Bash, or bare `bash` when
+that resolves to Niubash). The command itself is left unchanged apart from
+stripping `WIN_BASH_SKIP` / `WIN_BASH_SHELL` markers; the hook never injects
+`additionalContext` and never wraps the command:
 
-- **bash/POSIX commands and shell scripts run in the Niubash Bash** (`bash`,
+- **bash/POSIX commands and shell scripts route to the Niubash Bash** (`bash`,
   `grep`, `sed`, `awk`, `find`, `git`, `./x.sh`, `sh x.sh`, `bash x.sh`,
-  pipes, `&&`, `\$(...)`). The hook sets `shell = <Niubash Bash>` and prefixes
-  the command with `export PATH="$PATH:<git dirs>"; ` so Niubash inherits the
-  standard Git Bash commands (`awk`/`gzip`/`perl`/`tar`/`sed`) it does not
-  ship with. Git dirs are appended after Niubash's PATH so Niubash's own
-  `bash`/`sed`/`grep`/`find` stay primary and an inner `bash` still resolves
-  to Niubash. The standard Git Bash is discovered dynamically (env override,
-  `bash.exe`/`git.exe` on PATH, Git for Windows registry), with the common
-  install roots as a last-resort fallback when nothing dynamic matches, and
-  PowerShell 7 (`pwsh`) is the final fallback shell when neither Niubash nor
-  Git Bash exists. Missing Git for Windows / pwsh triggers a one-time install
-  prompt at session start.
+  pipes, `&&`, `\$(...)`). Shell resolution order: `WIN_BASH_PATH` env
+  override, the shared config `~/.config/win-bash/win-bash.json` `shell` key,
+  install candidates, then `bash` on PATH that resolves to a
+  `winuxcmd\bin\bash.exe`. If no Niubash is installed, bash/POSIX commands
+  fall back to the standard Git Bash, then to PowerShell 7 (`pwsh`) as the
+  last-resort fallback shell. Missing Git for Windows / pwsh triggers a
+  one-time install prompt at session start.
 - Windows-native operations that genuinely need a Windows shell are **left on
   the host PowerShell**: `psmux`/`pmux`/`tmux`, `powershell`/`pwsh` when RUN as
   a command, PowerShell Verb-Noun cmdlets (`Get-Content`, `Select-String`),
@@ -111,10 +111,20 @@ The PreToolUse hook routes each `exec_command` to the right shell:
   `start`, ...), and Windows shell scripts (`.ps1`, `.bat`, `.cmd`).
 - Everything else routes to the Niubash Bash by default: `node`, `npm`, `npx`,
   Windows executables (`where`, `reg`, `ping`, `netstat`, `ipconfig`, ...),
-  `cmd /c ...`, and any command not matched above, all with the same Git PATH
-  prefix.
+  `cmd /c ...`, and any command not matched above.
 - The Niubash profile (`~/.niubashrc`) is configured to inherit the same Git
-  Bash commands for interactive Niubash sessions.
+  Bash commands for interactive Niubash sessions. In tool-driven sessions
+  (invoked via `bash -lc`) the interactive rc is not loaded, so `awk`/`perl`/
+  `gzip` from Git Bash may not be available there; prefix the command with
+  `export PATH="$PATH:<git dirs>"; ` when such tools are needed (see
+  `docs/win-bash-injection-chain.md`).
+
+> Note: Codex's hook rewrite adopts `updatedInput.command` but drops
+> `updatedInput.shell` (verified against Codex CLI 0.156.1). The PreToolUse
+> hook's practical effect in Codex is therefore to strip escape-hatch markers
+> and never break the command; real shell routing relies on the explicit
+> `shell` guidance plus SessionStart and the user-level `USER:SHELL` policy.
+> See `docs/win-bash-injection-chain.md` for the full chain.
 
 Per-command escape hatches (the hook strips the marker before running the command):
 

@@ -11,7 +11,7 @@ const CONFIG_PATH = path.join(os.homedir(), '.config', 'win-bash', 'win-bash.jso
 const LEGACY_CONFIG_PATH = path.join(CODEX_HOME, 'win-bash.json');
 const RC_PATH = path.join(os.homedir(), '.niubashrc');
 const LEGACY_RC_PATH = path.join(os.homedir(), '.winshrc');
-const SHELL_TOOLS = new Set(['exec_command', 'functions.exec_command']);
+const SHELL_TOOLS = new Set(['exec_command', 'functions.exec_command', 'bash', 'shell']);
 const LOCAL_APP_DATA = process.env.LOCALAPPDATA || '';
 const CANDIDATES = [
   String.raw`D:\apps\Niubash\winuxcmd\bin\bash.exe`,
@@ -20,7 +20,7 @@ const CANDIDATES = [
 
 const GIT_INHERIT_RC = [
   '# win-bash: inherit standard Git Bash commands (awk/gzip/perl/tar/sed/...)',
-  '# win-bash-git-inherit-v2: discover Git dynamically from git on PATH (no hardcoded roots).',
+  '# win-bash-git-inherit-v3: discover Git dynamically from git on PATH (no hardcoded roots).',
   '__wb_git_root=""',
   '__wb_git="$(command -v git.exe 2>/dev/null || command -v git 2>/dev/null || true)"',
   'if [ -n "$__wb_git" ]; then',
@@ -38,7 +38,7 @@ const GIT_INHERIT_RC = [
   'if [ -n "$__wb_git_root" ]; then',
   '  case ":$PATH:" in',
   '    *":$__wb_git_root/usr/bin:"*) ;;',
-  '    *) export PATH="$__wb_git_root/usr/bin:$__wb_git_root/bin:$__wb_git_root/cmd:$PATH" ;;',
+  '    *) export PATH="$PATH:$__wb_git_root/usr/bin:$__wb_git_root/bin:$__wb_git_root/cmd" ;;',
   '  esac',
   'fi',
   'unset __wb_git_root __wb_root __wb_git',
@@ -114,26 +114,62 @@ function readConfigRaw() {
   try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch (_) { return {}; }
 }
 
-function writeConfig(shell) {
+function writeConfig(shell, paths) {
   const config = readConfigRaw();
   config.shell = shell;
+  if (paths) {
+    if (typeof paths.niubash_path === 'string') config.niubash_path = paths.niubash_path;
+    if (typeof paths.gitbash_path === 'string') config.gitbash_path = paths.gitbash_path;
+    if (typeof paths.pwsh_path === 'string') config.pwsh_path = paths.pwsh_path;
+  }
   config.platforms = config.platforms || {};
   config.platforms.codex = true;
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
 }
 
+// Replace an existing win-bash Git-inherit block (v1/v2/v3) inside an rc with
+// the current GIT_INHERIT_RC, preserving all other user content. The block is
+// delimited by the "# win-bash: inherit standard Git Bash commands" header and
+// the first "unset __wb_..." terminator line. Returns the swapped text, or null
+// when the rc has no win-bash Git-inherit block.
+function swapGitInheritBlock(content) {
+  const lines = String(content).split('\n');
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].indexOf('# win-bash: inherit standard Git Bash commands') === 0) { start = i; break; }
+  }
+  if (start === -1) return null;
+  let end = -1;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^unset __wb_/.test(lines[i])) { end = i; break; }
+  }
+  const block = GIT_INHERIT_RC.split('\n');
+  if (end === -1) return [...lines.slice(0, start), ...block].join('\n');
+  return [...lines.slice(0, start), ...block, ...lines.slice(end + 1)].join('\n');
+}
+
 // Returns { created, reason } describing what happened to the rc file. When the
-// rc already exists (user file or Niubash wizard output), append the win-bash
-// Git-inherit block idempotently so Plan B (Niubash inherits Git commands) also
-// applies to interactive Niubash sessions too. Never overwrite user content.
+// rc already exists (user file or Niubash wizard output), replace any old
+// win-bash Git-inherit block (v1/v2) with the current one, or append it when
+// absent, so Plan B (Niubash inherits Git commands) also applies to interactive
+// Niubash sessions too. Never overwrite user content.
 function ensureDefaultRc() {
   if (fs.existsSync(RC_PATH)) {
     const existing = fs.readFileSync(RC_PATH, 'utf8');
-    if (existing.includes('win-bash-git-inherit-v2')) return { created: false, reason: 'exists' };
-    const block = existing.endsWith('\n') ? GIT_INHERIT_RC : `\n${GIT_INHERIT_RC}`;
-    fs.appendFileSync(RC_PATH, `${block}\n`, 'utf8');
-    return { created: false, reason: existing.includes('__wb_git_root') ? 'git-inherit-upgraded' : 'git-inherit-appended' };
+    // swapGitInheritBlock below is idempotent: an already-current v3 block
+    // round-trips to identical text and falls through to reason 'exists'.
+    const swapped = swapGitInheritBlock(existing);
+    if (swapped !== null && swapped !== existing) {
+      fs.writeFileSync(RC_PATH, swapped, 'utf8');
+      return { created: false, reason: 'git-inherit-upgraded' };
+    }
+    if (swapped === null) {
+      const block = existing.endsWith('\n') ? GIT_INHERIT_RC : `\n${GIT_INHERIT_RC}`;
+      fs.appendFileSync(RC_PATH, `${block}\n`, 'utf8');
+      return { created: false, reason: 'git-inherit-appended' };
+    }
+    return { created: false, reason: 'exists' };
   }
   if (fs.existsSync(LEGACY_RC_PATH)) return { created: false, reason: 'legacy-exists' };
   fs.writeFileSync(RC_PATH, DEFAULT_RC, 'utf8');
@@ -149,18 +185,39 @@ function whereBash() {
   }
 }
 
+// Whether a bare `bash` on PATH resolves to a Niubash Bash (winuxcmd). When
+// true we inject the bare `bash` name so the host resolves it from PATH;
+// otherwise we fall back to the absolute Niubash path (portable install).
+function bareBashIsNiubash() {
+  return whereBash().some((entry) => /winuxcmd[\\/](?:usr[\\/])?bin[\\/]bash\.exe$/i.test(entry));
+}
 function resolveBash() {
   const candidates = [];
   if (process.env.WIN_BASH_PATH) candidates.push(process.env.WIN_BASH_PATH);
   const config = readConfig();
   if (config.shell) candidates.push(config.shell);
+  if (config.niubash_path) candidates.push(config.niubash_path);
   candidates.push(...CANDIDATES, ...whereBash().filter((value) => /winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(value)));
   for (const candidate of candidates) {
-    if (isFile(candidate)) return candidate;
+    if (candidate && isFile(candidate)) return candidate;
   }
   return null;
 }
 
+function resolveNiubashPure() {
+  const candidates = [];
+  if (process.env.WIN_BASH_PATH) candidates.push(process.env.WIN_BASH_PATH);
+  const config = readConfig();
+  // A winuxcmd-valued config.shell is the active Niubash (not a manual override
+  // to Git Bash/pwsh), so it is preferred when recording niubash_path.
+  if (config.shell && /winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(config.shell)) candidates.push(config.shell);
+  if (config.niubash_path) candidates.push(config.niubash_path);
+  candidates.push(...CANDIDATES, ...whereBash().filter((value) => /winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(value)));
+  for (const candidate of candidates) {
+    if (candidate && isFile(candidate)) return candidate;
+  }
+  return null;
+}
 function readStdin() {
   return new Promise((resolve) => {
     let data = '';
@@ -193,11 +250,34 @@ function emitContext(eventName, context) {
 }
 
 function configure() {
-  const shell = resolveBash();
-  const gitBash = resolveGitBash();
-  const pwsh = resolvePwsh();
+  const config = readConfig();
+  // Strategy X: an existing valid shell (user manual override) wins and is
+  // never overwritten. Otherwise the main shell resolves as the chain
+  // Niubash -> Git Bash -> pwsh.
+  let shell = (typeof config.shell === 'string' && isFile(config.shell)) ? config.shell : null;
+
+  // Each *_path is re-resolved only when missing or no longer valid, so a
+  // recorded path is kept and never repeatedly overwritten.
+  const updates = {};
+  const storedNiu = typeof config.niubash_path === 'string' ? config.niubash_path : '';
+  const niubashValid = storedNiu && isFile(storedNiu);
+  const niubash = niubashValid ? storedNiu : resolveNiubashPure();
+  if (!niubashValid && niubash) updates.niubash_path = niubash;
+
+  const storedGit = typeof config.gitbash_path === 'string' ? config.gitbash_path : '';
+  const gitValid = storedGit && isFile(storedGit) && !/winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(storedGit);
+  const gitBash = gitValid ? storedGit : resolveGitBash();
+  if (!gitValid && gitBash) updates.gitbash_path = gitBash;
+
+  const storedPwsh = typeof config.pwsh_path === 'string' ? config.pwsh_path : '';
+  const pwsh = storedPwsh || resolvePwsh();
+  if (!storedPwsh && pwsh) updates.pwsh_path = pwsh;
+
+  if (!shell) shell = niubash || gitBash || pwsh;
   if (!shell) return { ok: false, shell: null, git_bash: gitBash, pwsh, config: CONFIG_PATH, rc: RC_PATH, rc_result: null };
-  writeConfig(shell);
+
+  const needWrite = Object.keys(updates).length > 0 || !config.platforms || !config.platforms.codex;
+  if (needWrite) writeConfig(shell, updates);
   const rcResult = ensureDefaultRc();
   return { ok: true, shell, git_bash: gitBash, pwsh, config: CONFIG_PATH, rc: RC_PATH, rc_result: rcResult };
 }
@@ -335,8 +415,11 @@ const GIT_FALLBACK_ROOTS = [
 // registry install path, then git.exe on PATH (root derived). Only when none
 // of those find a Git Bash do we check the common install roots.
 function resolveGitBash() {
+  if (process.env.WIN_BASH_NO_GIT === '1') return null;
   const candidates = [];
   if (process.env.OMO_CODEX_GIT_BASH_PATH) candidates.push(process.env.OMO_CODEX_GIT_BASH_PATH);
+  const cfgGit = readConfig().gitbash_path;
+  if (cfgGit && isFile(cfgGit) && !/winuxcmd[\\/]bin[\\/]bash\.exe$/i.test(cfgGit)) candidates.push(cfgGit);
   candidates.push(...whereBash().filter((value) => /git[\\/]bin[\\/]bash\.exe$/i.test(value)));
   const registryRoot = gitRegistryInstallPath();
   if (registryRoot) candidates.push(path.join(registryRoot, 'bin', 'bash.exe'));
@@ -355,6 +438,11 @@ function resolveGitBash() {
 // trusted directly). Falls back to the standard Program Files install root.
 // Never Windows PowerShell 5.1 (powershell.exe).
 function resolvePwsh() {
+  // An explicit config pwsh_path is trusted directly (a Microsoft Store alias
+  // is a reparse point isFile() cannot stat, matching how where.exe output is
+  // treated elsewhere).
+  const cfgPwsh = readConfig().pwsh_path;
+  if (cfgPwsh) return cfgPwsh;
   try {
     const out = execFileSync('where.exe', ['pwsh.exe'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     const fromWhere = String(out).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -383,6 +471,15 @@ function buildGitPathPrefix() {
   return `export PATH="$PATH:${dirs.join(':')}"; `;
 }
 
+
+// PreToolUse injection: set updatedInput.shell to the resolved Bash (bare `bash` when it
+// resolves to a Niubash Bash, otherwise the absolute path). The command is NOT
+// wrapped and is left unchanged apart from escape-hatch marker stripping, so a
+// POSIX-only `export PATH=...` prefix never leaks into the host PowerShell
+// (Codex's exec_command hook rewrite keeps updatedInput.command but drops
+// updatedInput.shell). Niubash inherits standard Git Bash commands via
+// ~/.niubashrc (Plan B). Never injects additionalContext.
+
 // Decide what the PreToolUse hook should do for one exec_command input.
 // Returns { action: 'skip'|'force'|'respect'|'niubash'|'bash'|'pwsh'|'none',
 // shell, cmd } where shell is the shell to inject (or null) and cmd is the
@@ -392,7 +489,7 @@ function buildGitPathPrefix() {
 // installed, Git Bash is the fallback, then PowerShell 7 (pwsh) as the
 // last-resort fallback.
 function decide(input) {
-  const original = typeof input.cmd === 'string' ? input.cmd : '';
+  const original = typeof input.command === 'string' ? input.command : (typeof input.cmd === 'string' ? input.cmd : '');
   const markers = parseEscapeHatches(original);
   if (markers.skip) return { action: 'skip', shell: null, cmd: markers.cmd };
   if (markers.force) return { action: 'force', shell: isFile(markers.force) ? markers.force : null, cmd: markers.cmd };
@@ -401,8 +498,10 @@ function decide(input) {
   if (kind === 'niubash') {
     const niubash = resolveBash();
     if (niubash) {
-      const prefix = buildGitPathPrefix();
-      return { action: 'niubash', shell: niubash, cmd: prefix ? prefix + markers.cmd : markers.cmd };
+      const gitBash = resolveGitBash();
+      const prefix = gitBash ? buildGitPathPrefix() : '';
+      const shell = bareBashIsNiubash() ? 'bash' : niubash;
+      return { action: 'niubash', shell, cmd: prefix ? prefix + markers.cmd : markers.cmd };
     }
     const gitBash = resolveGitBash();
     if (gitBash) return { action: 'bash', shell: gitBash, cmd: markers.cmd };
@@ -474,17 +573,25 @@ async function main() {
   if (!input) return;
 
   const decision = decide(input);
-  const updated = { ...input, cmd: decision.cmd };
-  if (decision.shell) updated.shell = decision.shell;
-  const shellChanged = Boolean(decision.shell) && normalizeShell(decision.shell) !== normalizeShell(input.shell || '');
-  const cmdChanged = decision.cmd !== input.cmd;
-  if (!shellChanged && !cmdChanged) return;
+  const cmdKey = typeof input.command === 'string' ? 'command' : 'cmd';
+  const original = input[cmdKey] ?? '';
+  // Inject only updatedInput.shell. Codex's exec_command hook rewrite keeps
+  // updatedInput.command but drops updatedInput.shell, so a POSIX-only
+  // `export PATH=...` prefix would run in the host PowerShell and break. Git
+  // command inheritance for Niubash comes from ~/.niubashrc (Plan B), not from
+  // a per-command PATH prefix. Escape-hatch markers are still stripped here.
+  const markers = parseEscapeHatches(original);
+  const strippedCmd = markers.cmd || original;
+  const newInput = { ...input, [cmdKey]: strippedCmd };
+  const shellChanged = decision.shell && normalizeShell(decision.shell) !== normalizeShell(input.shell || '');
+  if (shellChanged) newInput.shell = decision.shell;
+  if (newInput[cmdKey] === original && !shellChanged) return;
 
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'allow',
-      updatedInput: updated,
+      updatedInput: newInput,
     },
   }) + '\n');
 }

@@ -1,6 +1,6 @@
 {
   "name": "win-bash",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "description": "Windows-specific Niubash Bash integration for Codex, including portable install and default config bootstrap.",
   "author": {
     "name": "Local user"

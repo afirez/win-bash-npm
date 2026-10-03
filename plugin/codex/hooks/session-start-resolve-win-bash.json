@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/scripts/win-bash-hook.js\" session-start",
-            "commandWindows": "node \"${PLUGIN_ROOT}\\scripts\\win-bash-hook.js\" session-start",
+            "command": "node -e \"const{spawnSync}=require('child_process');const s=process.argv[1];const p=s.startsWith('\\\\\\\\?\\\\')?s.slice(4):s;spawnSync(process.execPath,[p,...process.argv.slice(2)],{stdio:'inherit'})\" \"${PLUGIN_ROOT}/scripts/win-bash-hook.js\" session-start",
+            "commandWindows": "node -e \"const{spawnSync}=require('child_process');const s=process.argv[1];const p=s.startsWith('\\\\\\\\?\\\\')?s.slice(4):s;spawnSync(process.execPath,[p,...process.argv.slice(2)],{stdio:'inherit'})\" \"${PLUGIN_ROOT}\\scripts/win-bash-hook.js\" session-start",
             "timeout": 5,
             "statusMessage": "(win-bash) Resolving Niubash Bash"
           }

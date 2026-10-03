@@ -1,5 +1,14 @@
 # win-bash shell routing (Plan B — Niubash unified)
 
+
+> **Route vs PreToolUse 注入区分（2026-10-03 起权威说明见
+> `docs/win-bash-injection-chain.md`）**：本文件的 `route` 子命令输出描述的是
+> `decide()` 纯函数（诊断/测试用），其 `cmd` 确实带 `export PATH="..."; ` 前缀。
+> 但当前 0.1.6 的 PreToolUse 注入**只写 `updatedInput.shell`、command 原样保留**，
+> 前缀不会进入 `updatedInput.command`；且 Codex 宿主丢弃 `updatedInput.shell`。
+> "Niubash 继承 Git Bash 命令" 仅在交互/REPL 会话成立，工具驱动 `bash -lc`
+> 路径下 `awk`/`perl`/`gzip` 不可用（known limitation，本次不改行为）。
+
 Task: route Codex `exec_command` through the Niubash Bash so every bash/POSIX
 command and shell script runs there, while Niubash inherits standard Git Bash
 commands (`awk`/`gzip`/`perl`/`tar`/`sed`) it does not ship with.
@@ -80,15 +89,45 @@ Git Bash AND pwsh are all missing, a PowerShell 7 install prompt. PreToolUse
 never injects context.
 
 The Niubash profile (`~/.niubashrc`) is also configured by win-bash: a
-Git-inherit block (v2 marker `win-bash-git-inherit-v2`) is written on first
-create and idempotently appended/upgraded on an existing rc. The block
-discovers Git dynamically inside Niubash via `command -v git.exe` (derives the
-root two levels up, normalizes the drive letter, and probes `usr/bin/awk.exe`)
-instead of scanning hardcoded install dirs, so interactive `niu.exe` sessions
-get the same Git command inheritance. User rc content is preserved.
+Git-inherit block (v3 marker `win-bash-git-inherit-v3`) is written on first
+create and idempotently upgraded/replaced on an existing rc (an old v1/v2
+block is swapped in place, never duplicated). The block discovers Git
+dynamically inside Niubash via `command -v git.exe` (derives the root two
+levels up, normalizes the drive letter, and probes `usr/bin/awk.exe`) instead
+of scanning hardcoded install dirs, and appends the Git dirs AFTER the
+existing PATH (`$PATH:<git dirs>`) so Niubash's own `bash`/coreutils stay
+primary while `awk`/`gzip`/`perl`/`tar`/`sed` come from Git. Interactive
+`niu.exe` sessions get the same Git command inheritance as the tool-driven
+PATH prefix. User rc content is preserved.
 
 `session-start`/`configure`/`doctor` still resolve Niubash (install/config
 contract). The hook never emits `additionalContext` in PreToolUse.
+
+### Config as the single source of truth (main shell chain + strategy X)
+
+The shared config `~/.config/win-bash/win-bash.json` is the single source for
+the main shell and the three candidate paths:
+
+- `shell` — the effective main shell (user manual override wins).
+- `niubash_path` — the resolved Niubash Bash (`*\winuxcmd\bin\bash.exe`).
+- `gitbash_path` — the resolved standard Git Bash.
+- `pwsh_path` — the resolved PowerShell 7 (a Microsoft Store alias is trusted
+  directly, mirroring `where.exe pwsh.exe` output).
+
+The main shell chain is **Niubash → Git Bash → pwsh → none**. `configure()`
+(SessionStart/doctor) writes the config with strategy X: a `shell` that is
+already present and valid is preserved (never overwrites a manual override);
+each `*_path` is re-resolved and written only when missing or no longer valid,
+so repeated runs never clobber recorded paths. The `resolve*Path()` functions
+in `src/niubash.js` and the hook resolvers all prefer the recorded
+`*_path` first and fall back to dynamic discovery.
+
+The former "git-only" divert (routing `awk`/`perl`/`gzip`/`bzip2`/`unzip`/
+`dash` to pwsh when no Git Bash was resolvable) is **removed**: those commands
+now route through the main shell chain like everything else. Niubash inherits
+Git commands via `~/.niubashrc` v3 + the per-command Git PATH prefix; when no
+Git Bash exists and Niubash lacks the tool, the command simply fails with
+command-not-found instead of being silently rerouted.
 
 ## Claude Code / OpenCode (static, hook-less fallback)
 
@@ -116,7 +155,7 @@ restoring Niubash switches the static config back.
 ## Reinstall
 
 `node bin/win-bash.js install --target codex` -> syncs plugin/codex into the
-local marketplace and re-caches `win-bash/0.1.4`. Session restart required for
+local marketplace and re-caches `win-bash/0.1.6`. Session restart required for
 the hook to load.
 
 ## Evidence (2026-10-03, Plan B)
@@ -134,7 +173,7 @@ the hook to load.
     `ping -n 1 ...`, `netstat -ano`, `cmd /c echo x`, `grep tmux notes.md` ->
     `action=niubash` with Niubash shell + Git PATH prefix
 - Three-platform acceptance (2026-10-03): `install --target all` succeeded on
-  Codex (plugin 0.1.4 enabled), Claude Code (2.1.220) and OpenCode (1.18.34);
+  Codex (plugin 0.1.6 enabled), Claude Code (2.1.220) and OpenCode (1.18.34);
   `doctor --target all` reported the Niubash shell with Git Bash and pwsh both
   resolvable on all three; hook `route` confirmed `grep`/`./build.sh` -> Niubash
   + Git PATH prefix, `tmux ls`/`Get-ChildItem` -> `none`, `WIN_BASH_SKIP=1` ->

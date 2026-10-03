@@ -1,6 +1,6 @@
 {
   "name": "win-bash-ai",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "description": "Windows installer for Niubash Bash integration with Codex and Claude Code",
   "type": "module",
   "bin": {

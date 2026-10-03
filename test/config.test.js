@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { migrateConfig, markPlatform, getPlatformMarker, unmarkPlatform } from '../src/config.js';
+import { migrateConfig, markPlatform, getPlatformMarker, unmarkPlatform, readConfig, getPaths } from '../src/config.js';
 import { withTempHome } from './helpers.js';
 
 function writeJson(filePath, value) {
@@ -83,5 +83,46 @@ test('migrateConfig cleans all sources when legacy and intermediate coexist', ()
     assert.equal(config.shell, legacyShell, 'legacy shell should win');
     assert.equal(fs.existsSync(path.join(home, '.claude', 'win-bash.json')), false);
     assert.equal(fs.existsSync(path.join(home, '.config', 'win-bash', 'claude.json')), false);
+  });
+});
+
+test('readConfig/getPaths round-trip the three *_path fields', () => {
+  withTempHome((home) => {
+    const cfgPath = path.join(home, '.config', 'win-bash', 'win-bash.json');
+    const value = {
+      shell: 'C:\\shell\\bash.exe',
+      niubash_path: 'C:\\niu\\winuxcmd\\bin\\bash.exe',
+      gitbash_path: 'C:\\Git\\bin\\bash.exe',
+      pwsh_path: 'C:\\pwsh\\pwsh.exe',
+      installedAt: new Date().toISOString(),
+      platforms: { codex: true },
+    };
+    writeJson(cfgPath, value);
+
+    const config = readConfig();
+    assert.equal(config.shell, value.shell);
+    assert.equal(config.niubash_path, value.niubash_path);
+    assert.equal(config.gitbash_path, value.gitbash_path);
+    assert.equal(config.pwsh_path, value.pwsh_path);
+
+    const paths = getPaths();
+    assert.equal(paths.niubash_path, value.niubash_path);
+    assert.equal(paths.gitbash_path, value.gitbash_path);
+    assert.equal(paths.pwsh_path, value.pwsh_path);
+  });
+});
+
+test('readConfig tolerates an old config with no *_path fields', () => {
+  withTempHome((home) => {
+    const cfgPath = path.join(home, '.config', 'win-bash', 'win-bash.json');
+    writeJson(cfgPath, { shell: 'C:\\old\\bash.exe', installedAt: new Date().toISOString(), platforms: { claude: true } });
+
+    const config = readConfig();
+    assert.equal(config.shell, 'C:\\old\\bash.exe');
+    assert.equal(config.platforms.claude, true);
+    const paths = getPaths();
+    assert.equal(paths.niubash_path, null);
+    assert.equal(paths.gitbash_path, null);
+    assert.equal(paths.pwsh_path, null);
   });
 });
